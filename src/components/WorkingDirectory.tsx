@@ -4,6 +4,7 @@ import type { FileStatus, FileDiff } from "../types";
 import * as api from "../api";
 import DiffViewer from "./DiffViewer";
 import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
+import { useToast } from "../toast";
 
 interface Props {
   repoPath: string;
@@ -19,7 +20,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
   const [committing, setCommitting] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
   const [pushing, setPushing] = useState(false);
-  const [pushResult, setPushResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const toast = useToast();
 
   const staged = status.filter((f) => f.staged);
   const unstaged = status.filter((f) => !f.staged);
@@ -62,8 +63,9 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
       await api.commitChanges(repoPath, commitMsg.trim());
       setCommitMsg("");
       onRefresh();
+      toast.success("Commit created");
     } catch (e) {
-      alert(String(e));
+      toast.error(String(e));
     } finally {
       setCommitting(false);
     }
@@ -74,14 +76,14 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
       await api.stashSave(repoPath, stashMsg || "WIP stash");
       setStashMsg("");
       onRefresh();
+      toast.success("Changes stashed");
     } catch (e) {
-      alert(String(e));
+      toast.error(String(e));
     }
   };
 
   const handlePush = async () => {
     setPushing(true);
-    setPushResult(null);
     try {
       // Try to inject stored GitHub credentials into the remote URL
       let remoteArg: string | undefined;
@@ -96,10 +98,10 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
         // No remote or no matching account — fall back to plain push
       }
       const msg = await api.gitPush(repoPath, remoteArg);
-      setPushResult({ ok: true, msg });
+      toast.success(msg || "Push successful");
       onRefresh();
     } catch (e) {
-      setPushResult({ ok: false, msg: String(e) });
+      toast.error(String(e), 0);
     } finally {
       setPushing(false);
     }
@@ -209,11 +211,6 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
             <Upload size={14} />
             {pushing ? "Pushing..." : "Push to remote"}
           </button>
-          {pushResult && (
-            <div className={`push-result ${pushResult.ok ? "ok" : "err"}`}>
-              {pushResult.msg}
-            </div>
-          )}
         </div>
       </div>
     </div>

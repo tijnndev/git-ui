@@ -928,6 +928,94 @@ body {
 }
 .gh-remove-btn:hover { color: var(--red); background: rgba(240,80,80,0.08); }
 
+/* ── Toast notifications ─────────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 380px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+  pointer-events: all;
+  animation: toast-in 0.18s ease;
+  word-break: break-word;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  display: flex;
+}
+
+.toast-message {
+  flex: 1;
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 1px 2px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  margin-top: 1px;
+}
+
+.toast-success {
+  background: rgba(0, 200, 150, 0.12);
+  border-color: rgba(0, 200, 150, 0.28);
+  color: var(--green);
+}
+.toast-success .toast-dismiss { color: var(--green); opacity: 0.7; }
+.toast-success .toast-dismiss:hover { opacity: 1; background: rgba(0,200,150,0.15); }
+
+.toast-error {
+  background: rgba(240, 80, 80, 0.13);
+  border-color: rgba(240, 80, 80, 0.30);
+  color: var(--red);
+}
+.toast-error .toast-dismiss { color: var(--red); opacity: 0.7; }
+.toast-error .toast-dismiss:hover { opacity: 1; background: rgba(240,80,80,0.12); }
+
+.toast-info {
+  background: rgba(96, 168, 240, 0.12);
+  border-color: rgba(96, 168, 240, 0.28);
+  color: #60a8f0;
+}
+.toast-info .toast-dismiss { color: #60a8f0; opacity: 0.7; }
+.toast-info .toast-dismiss:hover { opacity: 1; background: rgba(96,168,240,0.12); }
+
+.toast-warning {
+  background: rgba(232, 184, 75, 0.13);
+  border-color: rgba(232, 184, 75, 0.30);
+  color: var(--yellow);
+}
+.toast-warning .toast-dismiss { color: var(--yellow); opacity: 0.7; }
+.toast-warning .toast-dismiss:hover { opacity: 1; background: rgba(232,184,75,0.12); }
+
 /* ── Buttons ─────────────────────────────────────────────── */
 
 .btn-primary {
