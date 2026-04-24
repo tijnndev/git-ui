@@ -111,3 +111,40 @@ pub fn init_repo(repo_path: String) -> Result<(), String> {
 pub fn clone_repo(url: String, dest: String) -> Result<(), String> {
     git_ops::clone_repo(&url, &dest)
 }
+
+#[command]
+pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
+    use std::process::Command;
+
+    let remote_name = remote.unwrap_or_else(|| "origin".to_string());
+    let mut args = vec!["push", &remote_name];
+    let branch_owned;
+    if let Some(ref b) = branch {
+        branch_owned = b.clone();
+        args.push(&branch_owned);
+    }
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Push successful".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git push failed".to_string() } else { combined })
+    }
+}
+
+#[command]
+pub fn get_remote_url(repo_path: String, remote: String) -> Result<String, String> {
+    use git2::Repository;
+    let repo = Repository::open(&repo_path).map_err(|e| e.to_string())?;
+    let rem = repo.find_remote(&remote).map_err(|e| e.to_string())?;
+    Ok(rem.url().unwrap_or("").to_string())
+}

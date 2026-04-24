@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
-import { Plus, Minus, Check, RotateCcw, Package } from "lucide-react";
+import { Plus, Minus, Check, RotateCcw, Package, Upload } from "lucide-react";
 import type { FileStatus, FileDiff } from "../types";
 import * as api from "../api";
 import DiffViewer from "./DiffViewer";
+import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
 
 interface Props {
   repoPath: string;
@@ -17,6 +18,8 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
+  const [pushing, setPushing] = useState(false);
+  const [pushResult, setPushResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const staged = status.filter((f) => f.staged);
   const unstaged = status.filter((f) => !f.staged);
@@ -73,6 +76,32 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
       onRefresh();
     } catch (e) {
       alert(String(e));
+    }
+  };
+
+  const handlePush = async () => {
+    setPushing(true);
+    setPushResult(null);
+    try {
+      // Try to inject stored GitHub credentials into the remote URL
+      let remoteArg: string | undefined;
+      try {
+        const remoteUrl = await api.getRemoteUrl(repoPath, "origin");
+        const accounts = loadAccounts();
+        const account = findAccountForUrl(remoteUrl, accounts);
+        if (account) {
+          remoteArg = injectToken(remoteUrl, account);
+        }
+      } catch {
+        // No remote or no matching account — fall back to plain push
+      }
+      const msg = await api.gitPush(repoPath, remoteArg);
+      setPushResult({ ok: true, msg });
+      onRefresh();
+    } catch (e) {
+      setPushResult({ ok: false, msg: String(e) });
+    } finally {
+      setPushing(false);
     }
   };
 
@@ -170,6 +199,21 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
               Stash
             </button>
           </div>
+
+          <button
+            className="btn-secondary"
+            style={{ justifyContent: "center" }}
+            onClick={handlePush}
+            disabled={pushing}
+          >
+            <Upload size={14} />
+            {pushing ? "Pushing..." : "Push to remote"}
+          </button>
+          {pushResult && (
+            <div className={`push-result ${pushResult.ok ? "ok" : "err"}`}>
+              {pushResult.msg}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -8,6 +8,18 @@ export async function getRepoSummary(repoPath: string): Promise<RepoSummary> {
   return invoke("get_repo_summary", { repoPath });
 }
 
+export async function gitPush(
+  repoPath: string,
+  remote?: string,
+  branch?: string,
+): Promise<string> {
+  return invoke("git_push", { repoPath, remote, branch });
+}
+
+export async function getRemoteUrl(repoPath: string, remote: string): Promise<string> {
+  return invoke("get_remote_url", { repoPath, remote });
+}
+
 export async function getCommits(repoPath: string, branch?: string, limit?: number): Promise<CommitInfo[]> {
   return invoke("get_commits", { repoPath, branch, limit });
 }

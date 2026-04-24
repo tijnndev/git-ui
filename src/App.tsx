@@ -8,7 +8,10 @@ import CommitDetail from "./components/CommitDetail";
 import WorkingDirectory from "./components/WorkingDirectory";
 import WelcomeScreen from "./components/WelcomeScreen";
 import ResizableSplit from "./components/ResizableSplit";
+import SettingsPage from "./components/SettingsPage";
 import type { CommitInfo, BranchInfo, FileStatus, RepoSummary, RecentRepo } from "./types";
+import type { AppSettings } from "./settings";
+import { loadSettings, saveSettings, applySettings } from "./settings";
 import * as api from "./api";
 
 export type Tab = "graph" | "working";
@@ -44,6 +47,11 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>(parseStoredRepos);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // Apply saved settings on first render
+  useEffect(() => { applySettings(settings); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveRecentRepos = useCallback((repos: RecentRepo[]) => {
     setRecentRepos(repos);
@@ -133,7 +141,7 @@ export default function App() {
   if (!repoPath) {
     return (
       <div className="app">
-        <TitleBar title="Git UI" repoPath={null} onOpenRepo={openRepo} onRefresh={() => {}} onGoHome={null} />
+        <TitleBar title="Git UI" repoPath={null} onOpenRepo={openRepo} onRefresh={() => {}} onGoHome={null} onOpenSettings={() => setShowSettings(true)} />
         <WelcomeScreen
           onOpenRepo={openRepo}
           recentRepos={recentRepos}
@@ -141,6 +149,13 @@ export default function App() {
           onPinToggle={togglePin}
           onRemove={removeRecent}
         />
+        {showSettings && (
+          <SettingsPage
+            settings={settings}
+            onSave={(s) => { saveSettings(s); applySettings(s); setSettings(s); setShowSettings(false); }}
+            onClose={() => setShowSettings(false)}
+          />
+        )}
       </div>
     );
   }
@@ -153,6 +168,7 @@ export default function App() {
         onOpenRepo={openRepo}
         onRefresh={refresh}
         onGoHome={goHome}
+        onOpenSettings={() => setShowSettings(true)}
       />
       {error && (
         <div className="error-banner">
@@ -193,6 +209,7 @@ export default function App() {
                   branches={branches}
                   selectedCommit={selectedCommit}
                   onSelectCommit={setSelectedCommit}
+                  settings={settings}
                 />
               }
               bottom={
@@ -212,6 +229,13 @@ export default function App() {
           )}
         </div>
       </div>
+      {showSettings && (
+        <SettingsPage
+          settings={settings}
+          onSave={(s) => { saveSettings(s); applySettings(s); setSettings(s); setShowSettings(false); }}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
     </div>
   );
 }

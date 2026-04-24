@@ -32,6 +32,8 @@ pub fn run() {
             get_commit_files,
             init_repo,
             clone_repo,
+            git_push,
+            get_remote_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

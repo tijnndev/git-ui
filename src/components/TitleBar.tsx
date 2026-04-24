@@ -1,5 +1,5 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid } from "lucide-react";
+import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid, Settings } from "lucide-react";
 
 // Stable reference — created once at module load, not per render
 const appWindow = getCurrentWindow();
@@ -10,9 +10,10 @@ interface Props {
   onOpenRepo: () => void;
   onRefresh: () => void;
   onGoHome: (() => void) | null;
+  onOpenSettings: () => void;
 }
 
-export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome }: Props) {
+export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome, onOpenSettings }: Props) {
 
   return (
     <div className="titlebar">
@@ -40,6 +41,9 @@ export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoH
             <RefreshCw size={14} />
           </button>
         )}
+        <button className="titlebar-btn" onClick={onOpenSettings} title="Settings">
+          <Settings size={14} />
+        </button>
       </div>
       <div className="titlebar-controls">
         <button className="win-btn minimize" onMouseDown={(e) => { e.stopPropagation(); appWindow.minimize(); }}>
