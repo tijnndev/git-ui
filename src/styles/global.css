@@ -786,7 +786,7 @@ body {
 
 .commit-input {
   background: var(--bg-0);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   padding: 8px;
@@ -809,7 +809,7 @@ body {
 .stash-form input {
   flex: 1;
   background: var(--bg-0);
-  border: 1px solid var(--border-light);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
   padding: 5px 8px;
@@ -1049,7 +1049,7 @@ body {
   justify-content: center;
   gap: 6px;
   background: var(--bg-hover);
-  border: 1px solid var(--border-light);
+  border: none;
   border-radius: var(--radius);
   color: var(--text-secondary);
   padding: 5px 10px;
@@ -1232,8 +1232,6 @@ body {
   font-size: 13px;
   margin-bottom: 4px;
 }
-
-.launchpad-section {}
 
 .launchpad-section-title {
   display: flex;
