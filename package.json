@@ -1,6 +1,6 @@
 {
   "name": "git-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "scripts": {
     "dev": "vite",
@@ -12,13 +12,14 @@
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-shell": "^2.0.0",
+    "@tauri-apps/plugin-store": "^2.4.2",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.0",
+    "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.468.0",
     "react-virtualized-auto-sizer": "^1.0.24",
-    "react-window": "^1.8.10",
-    "d3": "^7.9.0",
-    "@types/d3": "^7.4.3"
+    "react-window": "^1.8.10"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

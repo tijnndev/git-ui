@@ -1,10 +1,11 @@
-import { useMemo, useRef, useEffect, useCallback } from "react";
-import type { CommitInfo, BranchInfo } from "../types";
+import { useMemo, useRef, useEffect, useCallback, useState } from "react";
+import type { CommitInfo, BranchInfo, TagInfo } from "../types";
 import type { AppSettings } from "../settings";
 
 interface Props {
   commits: CommitInfo[];
   branches: BranchInfo[];
+  tags: TagInfo[];
   selectedCommit: CommitInfo | null;
   onSelectCommit: (commit: CommitInfo) => void;
   settings: AppSettings;
@@ -124,14 +125,26 @@ function computeGraph(commits: CommitInfo[]): { nodes: LaneCommit[]; edges: Grap
   return { nodes, edges };
 }
 
-export default function CommitGraph({ commits, branches, selectedCommit, onSelectCommit, settings }: Props) {
+export default function CommitGraph({ commits, branches, tags, selectedCommit, onSelectCommit, settings }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [search, setSearch] = useState("");
 
   const ROW_H = settings.graphRowHeight;
   const LANE_W = settings.graphLaneWidth;
 
-  const graphData = useMemo(() => computeGraph(commits), [commits]);
+  const filteredCommits = useMemo(() => {
+    if (!search.trim()) return commits;
+    const q = search.toLowerCase();
+    return commits.filter(
+      (c) =>
+        c.message.toLowerCase().includes(q) ||
+        c.author_name.toLowerCase().includes(q) ||
+        c.short_oid.toLowerCase().includes(q),
+    );
+  }, [commits, search]);
+
+  const graphData = useMemo(() => computeGraph(filteredCommits), [filteredCommits]);
 
   const branchMap = useMemo(() => {
     const m = new Map<string, BranchInfo[]>();
@@ -143,11 +156,20 @@ export default function CommitGraph({ commits, branches, selectedCommit, onSelec
     return m;
   }, [branches]);
 
+  const tagMap = useMemo(() => {
+    const m = new Map<string, TagInfo[]>();
+    tags.forEach((t) => {
+      const existing = m.get(t.oid) ?? [];
+      existing.push(t);
+      m.set(t.oid, existing);
+    });
+    return m;
+  }, [tags]);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
-
     const dpr = window.devicePixelRatio || 1;
     const width = container.clientWidth;
     if (width <= 0) return;
@@ -283,6 +305,24 @@ export default function CommitGraph({ commits, branches, selectedCommit, onSelec
         tx += pillW + 4;
       });
 
+      // Tag label pills (amber)
+      const tagInfos = tagMap.get(commit.oid) ?? [];
+      tagInfos.forEach((t) => {
+        const label = "⬛ " + t.name;
+        const tw = ctx.measureText(label).width;
+        const pillW = tw + PILL_PAD_X * 2;
+        ctx.fillStyle = "rgba(120, 80, 0, 0.40)";
+        roundRectPath(tx, cy - PILL_H / 2, pillW, PILL_H, 3);
+        ctx.fill();
+        ctx.strokeStyle = "#e8b84b";
+        ctx.lineWidth = 0.8;
+        roundRectPath(tx, cy - PILL_H / 2, pillW, PILL_H, 3);
+        ctx.stroke();
+        ctx.fillStyle = "#e8b84b";
+        ctx.fillText(label, tx + PILL_PAD_X, cy);
+        tx += pillW + 4;
+      });
+
       // Message
       const msgMaxW = Math.max(width - rightCols - tx - 16, 40);
       ctx.font = `${settings.graphFontSize}px ui-sans-serif, system-ui, sans-serif`;
@@ -313,7 +353,7 @@ export default function CommitGraph({ commits, branches, selectedCommit, onSelec
         ctx.fillText(commit.short_oid, width - hashW, cy, hashW - 4);
       }
     });
-  }, [graphData, selectedCommit, branchMap, settings, ROW_H, LANE_W]);
+  }, [graphData, selectedCommit, branchMap, tagMap, settings, ROW_H, LANE_W]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -339,6 +379,19 @@ export default function CommitGraph({ commits, branches, selectedCommit, onSelec
 
   return (
     <div className="commit-graph-container" ref={containerRef}>
+      <div className="commit-graph-search">
+        <input
+          className="graph-search-input"
+          placeholder="Search commits…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        {search && (
+          <span className="graph-search-count">
+            {filteredCommits.length} / {commits.length}
+          </span>
+        )}
+      </div>
       <div className="commit-graph-header">
         <span style={{ flex: 1 }}>Message</span>
         {settings.showAuthorCol && <span style={{ width: AUTHOR_COL_W, flexShrink: 0 }}>Author</span>}

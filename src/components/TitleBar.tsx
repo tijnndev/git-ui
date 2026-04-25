@@ -1,7 +1,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid, Settings } from "lucide-react";
+import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid, Settings, Download } from "lucide-react";
 
-// Stable reference — created once at module load, not per render
+// Stable reference - created once at module load, not per render
 const appWindow = getCurrentWindow();
 
 interface Props {
@@ -11,9 +11,11 @@ interface Props {
   onRefresh: () => void;
   onGoHome: (() => void) | null;
   onOpenSettings: () => void;
+  onPull?: () => void;
+  pulling?: boolean;
 }
 
-export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome, onOpenSettings }: Props) {
+export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome, onOpenSettings, onPull, pulling }: Props) {
 
   return (
     <div className="titlebar">
@@ -36,9 +38,14 @@ export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoH
         <button className="titlebar-btn" onClick={onOpenRepo} title="Open Repository">
           <FolderOpen size={14} />
         </button>
+        {repoPath && onPull && (
+          <button className="titlebar-btn" onClick={onPull} disabled={pulling} title="Pull from upstream">
+            <Download size={14} />
+          </button>
+        )}
         {repoPath && (
           <button className="titlebar-btn" onClick={onRefresh} title="Refresh (Ctrl+R)">
-            <RefreshCw size={14} />
+            <RefreshCw size={14} className={pulling ? "spin" : ""} />
           </button>
         )}
         <button className="titlebar-btn" onClick={onOpenSettings} title="Settings">

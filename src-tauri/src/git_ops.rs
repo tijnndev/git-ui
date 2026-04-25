@@ -445,3 +445,251 @@ pub fn clone_repo(url: &str, dest: &str) -> Result<(), String> {
     Repository::clone(url, dest).map_err(|e| e.message().to_string())?;
     Ok(())
 }
+
+pub fn pull(repo_path: &str) -> Result<String, String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .args(["pull"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Already up to date.".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git pull failed".to_string() } else { combined })
+    }
+}
+
+pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
+    use std::process::Command;
+    // `git restore` (git ≥ 2.23) discards working-tree changes cleanly.
+    // Fall back to `git checkout HEAD -- <file>` for older versions.
+    let out = Command::new("git")
+        .args(["restore", "--", file_path])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let out2 = Command::new("git")
+        .args(["checkout", "HEAD", "--", file_path])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out2.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out2.stderr).trim().to_string();
+    Err(if err.is_empty() { "discard failed".to_string() } else { err })
+}
+
+pub fn merge_branch(repo_path: &str, branch_name: &str) -> Result<String, String> {
+    use std::process::Command;
+    let output = Command::new("git")
+        .args(["merge", branch_name])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Merge complete".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git merge failed".to_string() } else { combined })
+    }
+}
+
+pub fn rename_branch(repo_path: &str, old_name: &str, new_name: &str) -> Result<(), String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let mut branch = repo.find_branch(old_name, BranchType::Local)
+        .map_err(|e| e.message().to_string())?;
+    branch.rename(new_name, false).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn amend_commit(repo_path: &str, message: &str) -> Result<String, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let mut index = repo.index().map_err(|e| e.message().to_string())?;
+    let tree_id = index.write_tree().map_err(|e| e.message().to_string())?;
+    let tree = repo.find_tree(tree_id).map_err(|e| e.message().to_string())?;
+
+    let config = repo.config().map_err(|e| e.message().to_string())?;
+    let name = config.get_string("user.name").unwrap_or_else(|_| "Unknown".to_string());
+    let email = config.get_string("user.email").unwrap_or_else(|_| "unknown@example.com".to_string());
+    let sig = Signature::now(&name, &email).map_err(|e| e.message().to_string())?;
+
+    let head_commit = repo.head()
+        .map_err(|e| e.message().to_string())?
+        .peel_to_commit()
+        .map_err(|e| e.message().to_string())?;
+
+    let oid = head_commit.amend(
+        Some("HEAD"),
+        Some(&sig),
+        Some(&sig),
+        None,
+        Some(message),
+        Some(&tree),
+    ).map_err(|e| e.message().to_string())?;
+
+    Ok(oid.to_string())
+}
+
+pub fn stash_drop(repo_path: &str, index: usize) -> Result<(), String> {
+    let mut repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    repo.stash_drop(index).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn cherry_pick(repo_path: &str, commit_oid: &str) -> Result<(), String> {
+    use std::process::Command;
+    let out = Command::new("git")
+        .args(["cherry-pick", commit_oid])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "cherry-pick failed".to_string() } else { err })
+}
+
+pub fn revert_commit(repo_path: &str, commit_oid: &str) -> Result<(), String> {
+    use std::process::Command;
+    let out = Command::new("git")
+        .args(["revert", "--no-edit", commit_oid])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "revert failed".to_string() } else { err })
+}
+
+pub fn reset_to_commit(repo_path: &str, commit_oid: &str, mode: &str) -> Result<(), String> {
+    use std::process::Command;
+    let flag = match mode {
+        "soft"  => "--soft",
+        "hard"  => "--hard",
+        _       => "--mixed",
+    };
+    let out = Command::new("git")
+        .args(["reset", flag, commit_oid])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "reset failed".to_string() } else { err })
+}
+
+pub fn checkout_commit(repo_path: &str, commit_oid: &str) -> Result<(), String> {
+    use std::process::Command;
+    let out = Command::new("git")
+        .args(["checkout", commit_oid])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "checkout failed".to_string() } else { err })
+}
+
+pub fn create_tag(repo_path: &str, name: &str, commit_oid: &str, message: Option<&str>) -> Result<(), String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let oid = Oid::from_str(commit_oid).map_err(|e| e.message().to_string())?;
+    let obj = repo.find_object(oid, None).map_err(|e| e.message().to_string())?;
+    if let Some(msg) = message.filter(|m| !m.is_empty()) {
+        let config = repo.config().map_err(|e| e.message().to_string())?;
+        let author_name = config.get_string("user.name").unwrap_or_else(|_| "Unknown".to_string());
+        let author_email = config.get_string("user.email").unwrap_or_else(|_| "unknown@example.com".to_string());
+        let sig = Signature::now(&author_name, &author_email).map_err(|e| e.message().to_string())?;
+        repo.tag(name, &obj, &sig, msg, false).map_err(|e| e.message().to_string())?;
+    } else {
+        repo.tag_lightweight(name, &obj, false).map_err(|e| e.message().to_string())?;
+    }
+    Ok(())
+}
+
+pub fn delete_tag(repo_path: &str, name: &str) -> Result<(), String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    repo.tag_delete(name).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn get_file_history(repo_path: &str, file_path: &str, limit: usize) -> Result<Vec<CommitInfo>, String> {
+    use std::process::Command;
+    // Use git log with --follow to handle renames
+    let out = Command::new("git")
+        .args([
+            "log",
+            &format!("--max-count={}", limit),
+            "--follow",
+            "--pretty=format:%H|%h|%s|%an|%ae|%ct|%P",
+            "--",
+            file_path,
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !out.status.success() {
+        let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if err.is_empty() { "git log failed".to_string() } else { err });
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut commits = Vec::new();
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.splitn(7, '|').collect();
+        if parts.len() < 6 { continue; }
+        let parents: Vec<String> = if parts.len() == 7 && !parts[6].is_empty() {
+            parts[6].split_whitespace().map(|s| s.to_string()).collect()
+        } else {
+            vec![]
+        };
+        commits.push(CommitInfo {
+            oid: parts[0].to_string(),
+            short_oid: parts[1].to_string(),
+            message: parts[2].to_string(),
+            author_name: parts[3].to_string(),
+            author_email: parts[4].to_string(),
+            timestamp: parts[5].parse().unwrap_or(0),
+            parents,
+        });
+    }
+    Ok(commits)
+}
+
+pub fn add_remote(repo_path: &str, name: &str, url: &str) -> Result<(), String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    repo.remote(name, url).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn remove_remote(repo_path: &str, name: &str) -> Result<(), String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    repo.remote_delete(name).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn fetch_all(repo_path: &str) -> Result<(), String> {
+    use std::process::Command;
+    let out = Command::new("git")
+        .args(["fetch", "--all"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "git fetch --all failed".to_string() } else { err })
+}
+
+pub fn open_in_explorer(path: &str) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(target_os = "windows")]
+    Command::new("explorer").arg(path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    Command::new("open").arg(path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    Command::new("xdg-open").arg(path).spawn().map_err(|e| e.to_string())?;
+    Ok(())
+}

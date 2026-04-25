@@ -148,3 +148,88 @@ pub fn get_remote_url(repo_path: String, remote: String) -> Result<String, Strin
     let rem = repo.find_remote(&remote).map_err(|e| e.to_string())?;
     Ok(rem.url().unwrap_or("").to_string())
 }
+
+#[command]
+pub fn git_pull(repo_path: String) -> Result<String, String> {
+    git_ops::pull(&repo_path)
+}
+
+#[command]
+pub fn discard_file(repo_path: String, file_path: String) -> Result<(), String> {
+    git_ops::discard_file(&repo_path, &file_path)
+}
+
+#[command]
+pub fn merge_branch(repo_path: String, branch_name: String) -> Result<String, String> {
+    git_ops::merge_branch(&repo_path, &branch_name)
+}
+
+#[command]
+pub fn rename_branch(repo_path: String, old_name: String, new_name: String) -> Result<(), String> {
+    git_ops::rename_branch(&repo_path, &old_name, &new_name)
+}
+
+#[command]
+pub fn amend_commit(repo_path: String, message: String) -> Result<String, String> {
+    git_ops::amend_commit(&repo_path, &message)
+}
+
+#[command]
+pub fn stash_drop(repo_path: String, index: usize) -> Result<(), String> {
+    git_ops::stash_drop(&repo_path, index)
+}
+
+#[command]
+pub fn cherry_pick(repo_path: String, commit_oid: String) -> Result<(), String> {
+    git_ops::cherry_pick(&repo_path, &commit_oid)
+}
+
+#[command]
+pub fn revert_commit(repo_path: String, commit_oid: String) -> Result<(), String> {
+    git_ops::revert_commit(&repo_path, &commit_oid)
+}
+
+#[command]
+pub fn reset_to_commit(repo_path: String, commit_oid: String, mode: String) -> Result<(), String> {
+    git_ops::reset_to_commit(&repo_path, &commit_oid, &mode)
+}
+
+#[command]
+pub fn checkout_commit(repo_path: String, commit_oid: String) -> Result<(), String> {
+    git_ops::checkout_commit(&repo_path, &commit_oid)
+}
+
+#[command]
+pub fn create_tag(repo_path: String, name: String, commit_oid: String, message: Option<String>) -> Result<(), String> {
+    git_ops::create_tag(&repo_path, &name, &commit_oid, message.as_deref())
+}
+
+#[command]
+pub fn delete_tag(repo_path: String, name: String) -> Result<(), String> {
+    git_ops::delete_tag(&repo_path, &name)
+}
+
+#[command]
+pub fn get_file_history(repo_path: String, file_path: String, limit: Option<usize>) -> Result<Vec<crate::models::CommitInfo>, String> {
+    git_ops::get_file_history(&repo_path, &file_path, limit.unwrap_or(200))
+}
+
+#[command]
+pub fn add_remote(repo_path: String, name: String, url: String) -> Result<(), String> {
+    git_ops::add_remote(&repo_path, &name, &url)
+}
+
+#[command]
+pub fn remove_remote(repo_path: String, name: String) -> Result<(), String> {
+    git_ops::remove_remote(&repo_path, &name)
+}
+
+#[command]
+pub fn fetch_all(repo_path: String) -> Result<(), String> {
+    git_ops::fetch_all(&repo_path)
+}
+
+#[command]
+pub fn open_in_explorer(path: String) -> Result<(), String> {
+    git_ops::open_in_explorer(&path)
+}

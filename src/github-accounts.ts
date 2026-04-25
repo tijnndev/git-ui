@@ -1,6 +1,6 @@
 // GitHub account (Personal Access Token) storage.
 // Stored separately from AppSettings under a dedicated localStorage key.
-// Tokens are stored in plain text in localStorage — acceptable for a local desktop app.
+// Tokens are stored in plain text in localStorage - acceptable for a local desktop app.
 
 export interface GitHubAccount {
   id: string;        // random uuid

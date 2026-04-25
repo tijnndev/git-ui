@@ -1,4 +1,6 @@
-// All user-configurable preferences. Stored in localStorage under "git_ui_settings".
+// All user-configurable preferences. Stored via tauri-plugin-store (git-ui.json).
+
+import { storeGet, storeSet } from "./store";
 
 export interface AppSettings {
   // ── Graph ─────────────────────────────────────────────────
@@ -62,20 +64,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customCss: "",
 };
 
-const STORAGE_KEY = "git_ui_settings";
+const STORE_KEY = "settings";
 
-export function loadSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+export async function loadSettings(): Promise<AppSettings> {
+  const stored = await storeGet<Partial<AppSettings>>(STORE_KEY);
+  return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
 }
 
-export function saveSettings(s: AppSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+export async function saveSettings(s: AppSettings): Promise<void> {
+  await storeSet(STORE_KEY, s);
 }
 
 /** Inject CSS variables + custom CSS into a <style id="git-ui-theme"> element */

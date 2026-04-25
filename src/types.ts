@@ -68,4 +68,13 @@ export interface RecentRepo {
   name: string;
   lastOpened: number;
   pinned: boolean;
+  categoryId?: string | null;
+}
+
+export interface RepoCategory {
+  id: string;
+  name: string;
+  color: string;
+  /** id of a GitHubAccount from Settings > GitHub Accounts, or null */
+  accountId: string | null;
 }

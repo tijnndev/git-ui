@@ -103,3 +103,71 @@ export async function initRepo(repoPath: string): Promise<void> {
 export async function cloneRepo(url: string, dest: string): Promise<void> {
   return invoke("clone_repo", { url, dest });
 }
+
+export async function gitPull(repoPath: string): Promise<string> {
+  return invoke("git_pull", { repoPath });
+}
+
+export async function discardFile(repoPath: string, filePath: string): Promise<void> {
+  return invoke("discard_file", { repoPath, filePath });
+}
+
+export async function mergeBranch(repoPath: string, branchName: string): Promise<string> {
+  return invoke("merge_branch", { repoPath, branchName });
+}
+
+export async function renameBranch(repoPath: string, oldName: string, newName: string): Promise<void> {
+  return invoke("rename_branch", { repoPath, oldName, newName });
+}
+
+export async function amendCommit(repoPath: string, message: string): Promise<string> {
+  return invoke("amend_commit", { repoPath, message });
+}
+
+export async function stashDrop(repoPath: string, index: number): Promise<void> {
+  return invoke("stash_drop", { repoPath, index });
+}
+
+export async function cherryPick(repoPath: string, commitOid: string): Promise<void> {
+  return invoke("cherry_pick", { repoPath, commitOid });
+}
+
+export async function revertCommit(repoPath: string, commitOid: string): Promise<void> {
+  return invoke("revert_commit", { repoPath, commitOid });
+}
+
+export async function resetToCommit(repoPath: string, commitOid: string, mode: "soft" | "mixed" | "hard"): Promise<void> {
+  return invoke("reset_to_commit", { repoPath, commitOid, mode });
+}
+
+export async function checkoutCommit(repoPath: string, commitOid: string): Promise<void> {
+  return invoke("checkout_commit", { repoPath, commitOid });
+}
+
+export async function createTag(repoPath: string, name: string, commitOid: string, message?: string): Promise<void> {
+  return invoke("create_tag", { repoPath, name, commitOid, message: message ?? null });
+}
+
+export async function deleteTag(repoPath: string, name: string): Promise<void> {
+  return invoke("delete_tag", { repoPath, name });
+}
+
+export async function getFileHistory(repoPath: string, filePath: string, limit?: number): Promise<CommitInfo[]> {
+  return invoke("get_file_history", { repoPath, filePath, limit });
+}
+
+export async function addRemote(repoPath: string, name: string, url: string): Promise<void> {
+  return invoke("add_remote", { repoPath, name, url });
+}
+
+export async function removeRemote(repoPath: string, name: string): Promise<void> {
+  return invoke("remove_remote", { repoPath, name });
+}
+
+export async function fetchAll(repoPath: string): Promise<void> {
+  return invoke("fetch_all", { repoPath });
+}
+
+export async function openInExplorer(path: string): Promise<void> {
+  return invoke("open_in_explorer", { path });
+}

@@ -12,6 +12,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "dialog:default",
-    "shell:default"
+    "shell:default",
+    "store:default"
   ]
 }

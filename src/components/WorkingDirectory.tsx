@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Minus, Check, RotateCcw, Package, Upload } from "lucide-react";
+import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3 } from "lucide-react";
 import type { FileStatus, FileDiff } from "../types";
 import * as api from "../api";
 import DiffViewer from "./DiffViewer";
@@ -18,6 +18,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
+  const [amend, setAmend] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
   const [pushing, setPushing] = useState(false);
   const toast = useToast();
@@ -60,14 +61,30 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
     if (!commitMsg.trim()) return;
     setCommitting(true);
     try {
-      await api.commitChanges(repoPath, commitMsg.trim());
+      if (amend) {
+        await api.amendCommit(repoPath, commitMsg.trim());
+        toast.success("Commit amended");
+      } else {
+        await api.commitChanges(repoPath, commitMsg.trim());
+        toast.success("Commit created");
+      }
       setCommitMsg("");
+      setAmend(false);
       onRefresh();
-      toast.success("Commit created");
     } catch (e) {
       toast.error(String(e));
     } finally {
       setCommitting(false);
+    }
+  };
+
+  const handleDiscard = async (filePath: string) => {
+    if (!confirm(`Discard changes to "${filePath}"? This cannot be undone.`)) return;
+    try {
+      await api.discardFile(repoPath, filePath);
+      onRefresh();
+    } catch (e) {
+      toast.error(String(e));
     }
   };
 
@@ -95,7 +112,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
           remoteArg = injectToken(remoteUrl, account);
         }
       } catch {
-        // No remote or no matching account — fall back to plain push
+        // No remote or no matching account - fall back to plain push
       }
       const msg = await api.gitPush(repoPath, remoteArg);
       toast.success(msg || "Push successful");
@@ -166,6 +183,11 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
             >
               <span className={`status-badge status-${f.status}`}>{f.status[0].toUpperCase()}</span>
               <span className="file-path">{f.path}</span>
+              {f.status !== "untracked" && (
+                <button className="icon-btn danger" title="Discard changes" onClick={(e) => { e.stopPropagation(); handleDiscard(f.path); }}>
+                  <Trash2 size={10} />
+                </button>
+              )}
               <button className="icon-btn" onClick={(e) => { e.stopPropagation(); handleStage(f.path); }}>
                 <Plus size={10} />
               </button>
@@ -181,13 +203,18 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
             onChange={(e) => setCommitMsg(e.target.value)}
             rows={3}
           />
+          <label className="amend-label">
+            <input type="checkbox" checked={amend} onChange={(e) => setAmend(e.target.checked)} />
+            <Edit3 size={11} />
+            Amend last commit
+          </label>
           <button
             className="btn-primary"
             onClick={handleCommit}
-            disabled={!commitMsg.trim() || staged.length === 0 || committing}
+            disabled={!commitMsg.trim() || (staged.length === 0 && !amend) || committing}
           >
             <Check size={14} />
-            {committing ? "Committing..." : "Commit"}
+            {committing ? (amend ? "Amending..." : "Committing...") : (amend ? "Amend Commit" : "Commit")}
           </button>
 
           <div className="stash-form">

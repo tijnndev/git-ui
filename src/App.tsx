@@ -9,9 +9,12 @@ import WorkingDirectory from "./components/WorkingDirectory";
 import WelcomeScreen from "./components/WelcomeScreen";
 import ResizableSplit from "./components/ResizableSplit";
 import SettingsPage from "./components/SettingsPage";
-import type { CommitInfo, BranchInfo, FileStatus, RepoSummary, RecentRepo } from "./types";
+import FileHistory from "./components/FileHistory";
+import type { CommitInfo, BranchInfo, FileStatus, RepoSummary, RecentRepo, TagInfo, RepoCategory } from "./types";
 import type { AppSettings } from "./settings";
-import { loadSettings, saveSettings, applySettings } from "./settings";
+import { loadSettings, saveSettings, DEFAULT_SETTINGS, applySettings } from "./settings";
+import { storeGet, storeSet } from "./store";
+import { nanoid } from "./nanoid";
 import * as api from "./api";
 
 export type Tab = "graph" | "working";
@@ -20,20 +23,16 @@ function repoName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
-function parseStoredRepos(): RecentRepo[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem("recent_repos") || "[]");
-    if (!Array.isArray(raw) || raw.length === 0) return [];
-    // Migrate from old string[] format
-    if (typeof raw[0] === "string") {
-      return (raw as string[]).map((p) => ({
-        path: p, name: repoName(p), lastOpened: Date.now(), pinned: false,
-      }));
-    }
-    return raw as RecentRepo[];
-  } catch {
-    return [];
+async function loadRecentRepos(): Promise<RecentRepo[]> {
+  const raw = await storeGet<unknown[]>("recent_repos");
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  // Migrate from old string[] format
+  if (typeof raw[0] === "string") {
+    return (raw as string[]).map((p) => ({
+      path: p, name: repoName(p), lastOpened: Date.now(), pinned: false,
+    }));
   }
+  return raw as RecentRepo[];
 }
 
 export default function App() {
@@ -46,34 +45,71 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("graph");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recentRepos, setRecentRepos] = useState<RecentRepo[]>(parseStoredRepos);
-  const [settings, setSettings] = useState<AppSettings>(loadSettings);
+  const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
+  const [tags, setTags] = useState<TagInfo[]>([]);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [showSettings, setShowSettings] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [fileHistoryPath, setFileHistoryPath] = useState<string | null>(null);
+  const [categories, setCategories] = useState<RepoCategory[]>([]);
 
-  // Apply saved settings on first render
-  useEffect(() => { applySettings(settings); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  // Load persisted data from store on first render
+  useEffect(() => {
+    loadSettings().then((s) => { setSettings(s); applySettings(s); });
+    loadRecentRepos().then(setRecentRepos);
+    storeGet<RepoCategory[]>("categories").then((c) => setCategories(c ?? []));
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveRecentRepos = useCallback((repos: RecentRepo[]) => {
     setRecentRepos(repos);
-    localStorage.setItem("recent_repos", JSON.stringify(repos));
+    storeSet("recent_repos", repos);
   }, []);
+
+  const saveCategories = useCallback((cats: RepoCategory[]) => {
+    setCategories(cats);
+    storeSet("categories", cats);
+  }, []);
+
+  const handleCreateCategory = useCallback((cat: Omit<RepoCategory, "id">) => {
+    saveCategories([...categories, { ...cat, id: nanoid() }]);
+  }, [categories, saveCategories]);
+
+  const handleUpdateCategory = useCallback((cat: RepoCategory) => {
+    saveCategories(categories.map((c) => (c.id === cat.id ? cat : c)));
+  }, [categories, saveCategories]);
+
+  const handleDeleteCategory = useCallback((id: string) => {
+    saveCategories(categories.filter((c) => c.id !== id));
+    saveRecentRepos(recentRepos.map((r) => (r.categoryId === id ? { ...r, categoryId: null } : r)));
+  }, [categories, saveCategories, recentRepos, saveRecentRepos]);
+
+  const handleAssignCategory = useCallback((repoPath: string, categoryId: string | null) => {
+    saveRecentRepos(recentRepos.map((r) => (r.path === repoPath ? { ...r, categoryId } : r)));
+  }, [recentRepos, saveRecentRepos]);
+
+  const handleBulkAssignCategory = useCallback((paths: string[], categoryId: string | null) => {
+    const set = new Set(paths);
+    saveRecentRepos(recentRepos.map((r) => (set.has(r.path) ? { ...r, categoryId } : r)));
+  }, [recentRepos, saveRecentRepos]);
 
   // resetTab=true when opening a new repo, false when just refreshing
   const loadRepo = useCallback(async (path: string, resetTab = true) => {
     setLoading(true);
     setError(null);
     try {
-      const [summary, allCommits, allBranches, fileStatus] = await Promise.all([
+      const [summary, allCommits, allBranches, fileStatus, allTags] = await Promise.all([
         api.getRepoSummary(path),
         api.getAllCommits(path, 500),
         api.getBranches(path),
         api.getStatus(path),
+        api.getTags(path),
       ]);
       setRepoPath(path);
       setRepoSummary(summary);
       setCommits(allCommits);
       setBranches(allBranches);
       setStatus(fileStatus);
+      setTags(allTags);
       setSelectedCommit(null);
       if (resetTab) setActiveTab("graph");
 
@@ -83,6 +119,7 @@ export default function App() {
         name: repoName(path),
         lastOpened: Date.now(),
         pinned: existing?.pinned ?? false,
+        categoryId: existing?.categoryId ?? null,
       };
       const updated = [entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 20);
       saveRecentRepos(updated);
@@ -100,6 +137,20 @@ export default function App() {
     }
   }, [loadRepo]);
 
+  const openMultipleRepos = useCallback(async () => {
+    const selected = await open({ directory: true, multiple: true });
+    if (!selected) return;
+    const paths = Array.isArray(selected) ? selected : [selected];
+    const now = Date.now();
+    let updated = [...recentRepos];
+    for (const p of paths) {
+      if (!updated.find((r) => r.path === p)) {
+        updated = [{ path: p, name: repoName(p), lastOpened: now, pinned: false, categoryId: null }, ...updated];
+      }
+    }
+    saveRecentRepos(updated.slice(0, 50));
+  }, [recentRepos, saveRecentRepos]);
+
   // refresh never resets the active tab
   const refresh = useCallback(async () => {
     if (!repoPath) return;
@@ -112,9 +163,24 @@ export default function App() {
     setCommits([]);
     setBranches([]);
     setStatus([]);
+    setTags([]);
     setSelectedCommit(null);
     setError(null);
   }, []);
+
+  const handlePull = useCallback(async () => {
+    if (!repoPath || pulling) return;
+    setPulling(true);
+    setError(null);
+    try {
+      await api.gitPull(repoPath);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setPulling(false);
+    }
+  }, [repoPath, pulling, refresh]);
 
   const togglePin = useCallback((path: string) => {
     const updated = recentRepos.map((r) =>
@@ -144,15 +210,28 @@ export default function App() {
         <TitleBar title="Git UI" repoPath={null} onOpenRepo={openRepo} onRefresh={() => {}} onGoHome={null} onOpenSettings={() => setShowSettings(true)} />
         <WelcomeScreen
           onOpenRepo={openRepo}
+          onOpenMultiple={openMultipleRepos}
           recentRepos={recentRepos}
+          categories={categories}
           onSelectRecent={(path) => loadRepo(path, true)}
           onPinToggle={togglePin}
           onRemove={removeRecent}
+          onCreateCategory={handleCreateCategory}
+          onUpdateCategory={handleUpdateCategory}
+          onDeleteCategory={handleDeleteCategory}
+          onAssignCategory={handleAssignCategory}
+          onBulkAssignCategory={handleBulkAssignCategory}
+          onAddToLaunchpad={(path) => {
+            const name = repoName(path);
+            if (!recentRepos.find((r) => r.path === path)) {
+              saveRecentRepos([{ path, name, lastOpened: Date.now(), pinned: false, categoryId: null }, ...recentRepos].slice(0, 50));
+            }
+          }}
         />
         {showSettings && (
           <SettingsPage
             settings={settings}
-            onSave={(s) => { saveSettings(s); applySettings(s); setSettings(s); setShowSettings(false); }}
+            onSave={(s) => { saveSettings(s); applySettings(s); setSettings(s); setShowSettings(false); }}  // saveSettings is async but fire-and-forget is fine here
             onClose={() => setShowSettings(false)}
           />
         )}
@@ -168,8 +247,8 @@ export default function App() {
         onOpenRepo={openRepo}
         onRefresh={refresh}
         onGoHome={goHome}
-        onOpenSettings={() => setShowSettings(true)}
-      />
+        onOpenSettings={() => setShowSettings(true)}        onPull={handlePull}
+        pulling={pulling}      />
       {error && (
         <div className="error-banner">
           <span>{error}</span>
@@ -179,12 +258,29 @@ export default function App() {
       <div className="main-layout">
         <Sidebar
           branches={branches}
+          tags={tags}
           repoPath={repoPath}
           activeTab={activeTab}
           onTabChange={setActiveTab}
           onCheckout={async (branch) => {
             await api.checkoutBranch(repoPath, branch);
             refresh();
+          }}
+          onMerge={async (branch) => {
+            try {
+              await api.mergeBranch(repoPath, branch);
+              refresh();
+            } catch (e) {
+              setError(String(e));
+            }
+          }}
+          onRename={async (oldName, newName) => {
+            try {
+              await api.renameBranch(repoPath, oldName, newName);
+              refresh();
+            } catch (e) {
+              setError(String(e));
+            }
           }}
           onRefresh={refresh}
           repoSummary={repoSummary}
@@ -207,6 +303,7 @@ export default function App() {
                 <CommitGraph
                   commits={commits}
                   branches={branches}
+                  tags={tags}
                   selectedCommit={selectedCommit}
                   onSelectCommit={setSelectedCommit}
                   settings={settings}
@@ -218,6 +315,8 @@ export default function App() {
                     commit={selectedCommit}
                     repoPath={repoPath}
                     onClose={() => setSelectedCommit(null)}
+                    onRefresh={refresh}
+                    onOpenFileHistory={setFileHistoryPath}
                   />
                 ) : (
                   <div className="empty-state">
@@ -234,6 +333,14 @@ export default function App() {
           settings={settings}
           onSave={(s) => { saveSettings(s); applySettings(s); setSettings(s); setShowSettings(false); }}
           onClose={() => setShowSettings(false)}
+        />
+      )}
+      {fileHistoryPath && repoPath && (
+        <FileHistory
+          repoPath={repoPath}
+          filePath={fileHistoryPath}
+          onClose={() => setFileHistoryPath(null)}
+          onSelectCommit={(c) => { setSelectedCommit(c); setFileHistoryPath(null); setActiveTab("graph"); }}
         />
       )}
     </div>

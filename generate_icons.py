@@ -86,15 +86,16 @@ def save_png(img: Image.Image, path: str, size: int):
 
 
 def main():
-    # Generate high-res base
-    base = make_base_image(1024)
+    # Generate high-res base (4096px for supersampling – PIL doesn't anti-alias
+    # natively, so rendering at 4× and downscaling with LANCZOS gives smooth edges)
+    base = make_base_image(4096)
 
     # ── Required PNG sizes ─────────────────────────────────────────────
     pngs = {
         "32x32.png":       32,
         "128x128.png":     128,
         "128x128@2x.png":  256,
-        "icon.png":        512,
+        "icon.png":        1024,
     }
     for name, size in pngs.items():
         save_png(base, os.path.join(ICONS_DIR, name), size)
