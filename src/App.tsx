@@ -123,7 +123,7 @@ export default function App() {
         pinned: existing?.pinned ?? false,
         categoryId: existing?.categoryId ?? null,
       };
-      const updated = [entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 20);
+      const updated = [entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 50);
       saveRecentRepos(updated);
     } catch (e) {
       setError(String(e));
@@ -287,6 +287,11 @@ export default function App() {
           }}
           onRefresh={refresh}
           repoSummary={repoSummary}
+          categoryAccountId={
+            categories.find(
+              (c) => c.id === recentRepos.find((r) => r.path === repoPath)?.categoryId
+            )?.accountId ?? null
+          }
         />
         <div className="content-area">
           {loading ? (
@@ -299,6 +304,11 @@ export default function App() {
               repoPath={repoPath}
               status={status}
               onRefresh={refresh}
+              categoryAccountId={
+                categories.find(
+                  (c) => c.id === recentRepos.find((r) => r.path === repoPath)?.categoryId
+                )?.accountId ?? null
+              }
             />
           ) : (
             <ResizableSplit

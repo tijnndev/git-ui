@@ -14,6 +14,25 @@ fn git_cmd() -> Command {
     cmd
 }
 
+/// Inject `username:token@` into an HTTPS remote URL so git can authenticate
+/// without relying on a credential helper.
+fn inject_credentials_into_url(url: &str, username: &str, token: &str) -> String {
+    if let Some(pos) = url.find("://") {
+        let (scheme, rest) = url.split_at(pos + 3);
+        format!("{}{}:{}@{}", scheme, username, token, rest)
+    } else {
+        url.to_string()
+    }
+}
+
+/// Look up the URL of a named remote using git2.
+fn resolve_remote_url(repo_path: &str, remote: &str) -> Result<String, String> {
+    use git2::Repository;
+    let repo = Repository::open(repo_path).map_err(|e| e.to_string())?;
+    let rem = repo.find_remote(remote).map_err(|e| e.to_string())?;
+    Ok(rem.url().unwrap_or("").to_string())
+}
+
 #[command]
 pub fn get_repo_summary(repo_path: String) -> Result<RepoSummary, String> {
     git_ops::get_repo_summary(&repo_path)
@@ -127,15 +146,18 @@ pub fn clone_repo(url: String, dest: String) -> Result<(), String> {
 #[command]
 pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
-    let mut args = vec!["push", &remote_name];
-    let branch_owned;
+
+    let mut cmd = git_cmd();
+    // Bypass Windows Git Credential Manager so embedded credentials in the URL are used.
+    if remote_name.contains('@') {
+        cmd.arg("-c").arg("credential.helper=");
+    }
+    cmd.arg("push").arg(&remote_name);
     if let Some(ref b) = branch {
-        branch_owned = b.clone();
-        args.push(&branch_owned);
+        cmd.arg(b);
     }
 
-    let output = git_cmd()
-        .args(&args)
+    let output = cmd
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
@@ -300,11 +322,50 @@ pub fn stash_apply(repo_path: String, index: usize) -> Result<(), String> {
 }
 
 #[command]
-pub fn push_upstream(repo_path: String, remote: String, branch: String) -> Result<String, String> {
-    git_ops::push_upstream(&repo_path, &remote, &branch)
+pub fn push_upstream(repo_path: String, remote: String, branch: String, username: Option<String>, token: Option<String>) -> Result<String, String> {
+    let mut cmd = git_cmd();
+    if let (Some(user), Some(tok)) = (&username, &token) {
+        let url = resolve_remote_url(&repo_path, &remote)?;
+        let auth_url = inject_credentials_into_url(&url, user, tok);
+        // Override the remote URL for this invocation only and disable GCM.
+        cmd.arg("-c").arg("credential.helper=")
+           .arg("-c").arg(format!("remote.{}.url={}", remote, auth_url));
+    }
+    cmd.arg("push").arg("-u").arg(&remote).arg(&branch);
+    let output = cmd
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Push successful".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git push failed".to_string() } else { combined })
+    }
 }
 
 #[command]
-pub fn force_push(repo_path: String, remote: String, branch: String) -> Result<String, String> {
-    git_ops::force_push(&repo_path, &remote, &branch)
+pub fn force_push(repo_path: String, remote: String, branch: String, username: Option<String>, token: Option<String>) -> Result<String, String> {
+    let mut cmd = git_cmd();
+    if let (Some(user), Some(tok)) = (&username, &token) {
+        let url = resolve_remote_url(&repo_path, &remote)?;
+        let auth_url = inject_credentials_into_url(&url, user, tok);
+        cmd.arg("-c").arg("credential.helper=")
+           .arg("-c").arg(format!("remote.{}.url={}", remote, auth_url));
+    }
+    cmd.arg("push").arg("--force-with-lease").arg(&remote).arg(&branch);
+    let output = cmd
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Force push successful".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git push --force-with-lease failed".to_string() } else { combined })
+    }
 }

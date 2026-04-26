@@ -1,6 +1,10 @@
 // GitHub account (Personal Access Token) storage.
-// Stored separately from AppSettings under a dedicated localStorage key.
-// Tokens are stored in plain text in localStorage - acceptable for a local desktop app.
+// Stored via tauri-plugin-store (same backing file as settings) so that accounts
+// persist across both dev and production builds. Previously used localStorage,
+// which is scoped to the webview origin and therefore did NOT survive switching
+// between `tauri dev` (http://localhost:…) and the production app (tauri://localhost).
+
+import { storeGet, storeSet } from "./store";
 
 export interface GitHubAccount {
   id: string;        // random uuid
@@ -9,19 +13,34 @@ export interface GitHubAccount {
   token: string;     // Personal Access Token (classic or fine-grained)
 }
 
-const STORAGE_KEY = "git_ui_github_accounts";
+const STORE_KEY = "github_accounts";
+const LEGACY_LS_KEY = "git_ui_github_accounts";
 
-export function loadAccounts(): GitHubAccount[] {
+export async function loadAccounts(): Promise<GitHubAccount[]> {
+  // Try tauri-plugin-store first
+  const stored = await storeGet<GitHubAccount[]>(STORE_KEY);
+  if (stored && stored.length > 0) return stored;
+
+  // One-time migration from localStorage (only present on the current origin)
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as GitHubAccount[]) : [];
+    const raw = localStorage.getItem(LEGACY_LS_KEY);
+    if (raw) {
+      const migrated = JSON.parse(raw) as GitHubAccount[];
+      if (migrated.length > 0) {
+        await storeSet(STORE_KEY, migrated);
+        localStorage.removeItem(LEGACY_LS_KEY);
+        return migrated;
+      }
+    }
   } catch {
-    return [];
+    // ignore
   }
+
+  return [];
 }
 
-export function saveAccounts(accounts: GitHubAccount[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
+export async function saveAccounts(accounts: GitHubAccount[]): Promise<void> {
+  await storeSet(STORE_KEY, accounts);
 }
 
 /** Inject credentials into a GitHub HTTPS remote URL.

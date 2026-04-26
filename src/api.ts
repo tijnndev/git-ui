@@ -184,12 +184,12 @@ export async function stashApply(repoPath: string, index: number): Promise<void>
   return invoke("stash_apply", { repoPath, index });
 }
 
-export async function pushUpstream(repoPath: string, remote: string, branch: string): Promise<string> {
-  return invoke("push_upstream", { repoPath, remote, branch });
+export async function pushUpstream(repoPath: string, remote: string, branch: string, username?: string, token?: string): Promise<string> {
+  return invoke("push_upstream", { repoPath, remote, branch, username, token });
 }
 
-export async function forcePush(repoPath: string, remote: string, branch: string): Promise<string> {
-  return invoke("force_push", { repoPath, remote, branch });
+export async function forcePush(repoPath: string, remote: string, branch: string, username?: string, token?: string): Promise<string> {
+  return invoke("force_push", { repoPath, remote, branch, username, token });
 }
 
 export async function openTerminal(path: string): Promise<void> {

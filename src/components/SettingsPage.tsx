@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { X, RotateCcw, Palette, GitBranch, Type, Code, Github, Trash2, Plus } from "lucide-react";
 import type { AppSettings } from "../settings";
 import { DEFAULT_SETTINGS } from "../settings";
@@ -77,9 +77,11 @@ const EMPTY_NEW: Omit<GitHubAccount, "id"> = { label: "", username: "", token: "
 export default function SettingsPage({ settings, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<AppSettings>({ ...settings });
   const [activeSection, setActiveSection] = useState<Section>("graph");
-  const [accounts, setAccounts] = useState<GitHubAccount[]>(() => loadAccounts());
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [newAcc, setNewAcc] = useState<Omit<GitHubAccount, "id">>({ ...EMPTY_NEW });
   const [showToken, setShowToken] = useState<Record<string, boolean>>({});
+
+  useEffect(() => { loadAccounts().then(setAccounts); }, []);
 
   const persistAccounts = (list: GitHubAccount[]) => {
     setAccounts(list);

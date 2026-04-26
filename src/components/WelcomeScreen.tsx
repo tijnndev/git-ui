@@ -49,8 +49,8 @@ interface CloneDialogProps {
 }
 
 function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps) {
-  const accounts = loadAccounts();
-  const [accountId, setAccountId] = useState<string>(accounts[0]?.id ?? "");
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
+  const [accountId, setAccountId] = useState<string>("");
   const [reposByOwner, setReposByOwner] = useState<Map<string, GhRepo[]>>(new Map());
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -63,6 +63,14 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
   const [cloneError, setCloneError] = useState<string | null>(null);
 
   const selectedAccount = accounts.find((a) => a.id === accountId) ?? null;
+
+  // Load accounts from persistent store on mount
+  useEffect(() => {
+    loadAccounts().then((list) => {
+      setAccounts(list);
+      if (list.length > 0) setAccountId((prev) => prev || list[0].id);
+    });
+  }, []);
 
   // Fetch all repos (personal + orgs) whenever account changes
   useEffect(() => {
@@ -330,7 +338,9 @@ function CategoryForm({ initial, onSave, onClose }: CategoryFormProps) {
   const [name, setName] = useState(initial?.name ?? "");
   const [color, setColor] = useState(initial?.color ?? PRESET_COLORS[0]);
   const [accountId, setAccountId] = useState<string>(initial?.accountId ?? "");
-  const [accounts] = useState<GitHubAccount[]>(() => loadAccounts());
+  const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
+
+  useEffect(() => { loadAccounts().then(setAccounts); }, []);
 
   const handleSave = () => {
     if (!name.trim()) return;
@@ -565,6 +575,9 @@ export default function WelcomeScreen({
   const [search, setSearch] = useState("");
   const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
   const [behindPaths, setBehindPaths] = useState<Set<string>>(new Set());
+  const [ghAccounts, setGhAccounts] = useState<GitHubAccount[]>([]);
+
+  useEffect(() => { loadAccounts().then(setGhAccounts); }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -784,7 +797,7 @@ export default function WelcomeScreen({
                     <span className="category-dot" style={{ background: cat.color }} />
                     <span className="category-title-text">{cat.name}</span>
                     {cat.accountId && (() => {
-                      const acc = loadAccounts().find((a) => a.id === cat.accountId);
+                      const acc = ghAccounts.find((a) => a.id === cat.accountId);
                       return acc ? (
                         <span className="category-auth-badge" title={`Auth: ${acc.username}`}>
                           <Key size={10} />

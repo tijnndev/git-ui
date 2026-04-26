@@ -1,6 +1,6 @@
 [package]
 name = "git-ui"
-version = "1.2.2"
+version = "1.2.3"
 description = "A Git UI application"
 authors = ["you"]
 edition = "2021"

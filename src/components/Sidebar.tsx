@@ -8,6 +8,7 @@ import type { BranchInfo, RepoSummary, TagInfo, StashInfo, RemoteInfo, BranchAhe
 import type { Tab } from "../App";
 import * as api from "../api";
 import { useToast } from "../toast";
+import { loadAccounts } from "../github-accounts";
 
 interface Props {
   branches: BranchInfo[];
@@ -20,9 +21,10 @@ interface Props {
   onRename: (oldName: string, newName: string) => void;
   onRefresh: () => void;
   repoSummary: RepoSummary | null;
+  categoryAccountId?: string | null;
 }
 export default function Sidebar({
-  branches, tags, repoPath, activeTab, onTabChange, onCheckout, onMerge, onRename, onRefresh, repoSummary
+  branches, tags, repoPath, activeTab, onTabChange, onCheckout, onMerge, onRename, onRefresh, repoSummary, categoryAccountId
 }: Props) {
   const [localOpen, setLocalOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -146,9 +148,21 @@ export default function Sidebar({
     e.stopPropagation();
     setPushingBranch(branchName);
     try {
-      await api.pushUpstream(repoPath, "origin", branchName);
+      let username: string | undefined;
+      let token: string | undefined;
+      if (categoryAccountId) {
+        const accounts = await loadAccounts();
+        const acc = accounts.find((a) => a.id === categoryAccountId);
+        if (!acc) {
+          toast.error("No GitHub account found for this category. Go to Settings → GitHub Accounts and re-add your account.", 0);
+          return;
+        }
+        username = acc.username;
+        token = acc.token;
+      }
+      await api.pushUpstream(repoPath, "origin", branchName, username, token);
       onRefresh();
-    } catch (ex) { alert(String(ex)); }
+    } catch (ex) { toast.error(String(ex), 0); }
     finally { setPushingBranch(null); }
   };
 
@@ -157,9 +171,21 @@ export default function Sidebar({
     if (!confirm(`Force-push "${branchName}" to origin? (uses --force-with-lease)`)) return;
     setPushingBranch(branchName);
     try {
-      await api.forcePush(repoPath, "origin", branchName);
+      let username: string | undefined;
+      let token: string | undefined;
+      if (categoryAccountId) {
+        const accounts = await loadAccounts();
+        const acc = accounts.find((a) => a.id === categoryAccountId);
+        if (!acc) {
+          toast.error("No GitHub account found for this category. Go to Settings → GitHub Accounts and re-add your account.", 0);
+          return;
+        }
+        username = acc.username;
+        token = acc.token;
+      }
+      await api.forcePush(repoPath, "origin", branchName, username, token);
       onRefresh();
-    } catch (ex) { alert(String(ex)); }
+    } catch (ex) { toast.error(String(ex), 0); }
     finally { setPushingBranch(null); }
   };
 

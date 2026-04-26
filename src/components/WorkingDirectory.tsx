@@ -10,9 +10,10 @@ interface Props {
   repoPath: string;
   status: FileStatus[];
   onRefresh: () => void;
+  categoryAccountId?: string | null;
 }
 
-export default function WorkingDirectory({ repoPath, status, onRefresh }: Props) {
+export default function WorkingDirectory({ repoPath, status, onRefresh, categoryAccountId }: Props) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedStaged, setSelectedStaged] = useState(false);
   const [diff, setDiff] = useState<FileDiff | null>(null);
@@ -115,17 +116,32 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
   const handlePush = async () => {
     setPushing(true);
     try {
-      // Try to inject stored GitHub credentials into the remote URL
+      // Try to inject stored GitHub credentials into the remote URL.
+      // Priority: 1) category's assigned account, 2) account whose username matches the URL
       let remoteArg: string | undefined;
       try {
         const remoteUrl = await api.getRemoteUrl(repoPath, "origin");
-        const accounts = loadAccounts();
-        const account = findAccountForUrl(remoteUrl, accounts);
+        const accounts = await loadAccounts();
+        const account =
+          (categoryAccountId ? accounts.find((a) => a.id === categoryAccountId) : null)
+          ?? findAccountForUrl(remoteUrl, accounts);
+
+        // If this repo is in a category with an account assigned but no matching account
+        // was found in the store, refuse to push — a silent fallback would let Git
+        // Credential Manager supply the wrong cached credentials.
+        if (categoryAccountId && !account) {
+          toast.error(
+            "No GitHub account found for this category. Go to Settings → GitHub Accounts and re-add your account.",
+            0,
+          );
+          return;
+        }
+
         if (account) {
           remoteArg = injectToken(remoteUrl, account);
         }
       } catch {
-        // No remote or no matching account - fall back to plain push
+        // No remote configured - fall back to plain push
       }
       const msg = await api.gitPush(repoPath, remoteArg);
       toast.success(msg || "Push successful");
