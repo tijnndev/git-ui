@@ -455,8 +455,18 @@ pub fn init_repo(repo_path: &str) -> Result<(), String> {
 }
 
 pub fn clone_repo(url: &str, dest: &str) -> Result<(), String> {
-    Repository::clone(url, dest).map_err(|e| e.message().to_string())?;
-    Ok(())
+    let output = git_cmd()
+        .args(["clone", url, dest])
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(if combined.is_empty() { "git clone failed".to_string() } else { combined })
+    }
 }
 
 pub fn pull(repo_path: &str) -> Result<String, String> {

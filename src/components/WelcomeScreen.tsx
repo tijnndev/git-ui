@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { FolderOpen, FolderPlus, Star, Trash2, GitBranch, Clock, Plus, Tag, Edit2, Key, X, CheckSquare, Square, MoveRight, Search, Download, FolderSearch, FolderCog } from "lucide-react";
 import type { RecentRepo, RepoCategory } from "../types";
-import { loadAccounts } from "../github-accounts";
+import { loadAccounts, injectToken } from "../github-accounts";
 import type { GitHubAccount } from "../github-accounts";
 import { getStatus, cloneRepo, openInExplorer, getHeadBehind } from "../api";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -143,7 +143,10 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
 
   const handleClone = async () => {
     if (!selected || !dest || !folderName) return;
-    const url = useSSH ? selected.ssh_url : selected.clone_url;
+    let url = useSSH ? selected.ssh_url : selected.clone_url;
+    if (!useSSH && selectedAccount) {
+      url = injectToken(url, selectedAccount);
+    }
     const finalDest = dest.replace(/\\/g, "/") + "/" + folderName;
     setCloning(true);
     setCloneError(null);
