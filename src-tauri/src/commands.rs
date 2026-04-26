@@ -1,6 +1,18 @@
 use tauri::command;
+use std::process::Command;
 use crate::models::*;
 use crate::git_ops;
+
+fn git_cmd() -> Command {
+    let mut cmd = Command::new("git");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
 
 #[command]
 pub fn get_repo_summary(repo_path: String) -> Result<RepoSummary, String> {
@@ -114,8 +126,6 @@ pub fn clone_repo(url: String, dest: String) -> Result<(), String> {
 
 #[command]
 pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String>) -> Result<String, String> {
-    use std::process::Command;
-
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
     let mut args = vec!["push", &remote_name];
     let branch_owned;
@@ -124,7 +134,7 @@ pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String
         args.push(&branch_owned);
     }
 
-    let output = Command::new("git")
+    let output = git_cmd()
         .args(&args)
         .current_dir(&repo_path)
         .output()
@@ -232,4 +242,69 @@ pub fn fetch_all(repo_path: String) -> Result<(), String> {
 #[command]
 pub fn open_in_explorer(path: String) -> Result<(), String> {
     git_ops::open_in_explorer(&path)
+}
+
+#[command]
+pub fn open_terminal(path: String) -> Result<(), String> {
+    git_ops::open_terminal(&path)
+}
+
+#[command]
+pub fn discard_all(repo_path: String) -> Result<(), String> {
+    git_ops::discard_all(&repo_path)
+}
+
+#[command]
+pub fn push_tag(repo_path: String, tag_name: String, remote: String) -> Result<(), String> {
+    git_ops::push_tag(&repo_path, &tag_name, &remote)
+}
+
+#[command]
+pub fn push_all_tags(repo_path: String, remote: String) -> Result<(), String> {
+    git_ops::push_all_tags(&repo_path, &remote)
+}
+
+#[command]
+pub fn delete_remote_branch(repo_path: String, remote: String, branch: String) -> Result<(), String> {
+    git_ops::delete_remote_branch(&repo_path, &remote, &branch)
+}
+
+#[command]
+pub fn squash_merge(repo_path: String, branch_name: String) -> Result<String, String> {
+    git_ops::squash_merge(&repo_path, &branch_name)
+}
+
+#[command]
+pub fn get_branches_ahead_behind(repo_path: String) -> Result<Vec<crate::models::BranchAheadBehind>, String> {
+    git_ops::get_branches_ahead_behind(&repo_path)
+}
+
+#[command]
+pub fn get_head_behind(repo_path: String) -> Result<u32, String> {
+    git_ops::get_head_behind(&repo_path)
+}
+
+#[command]
+pub fn rebase_branch(repo_path: String, onto_branch: String) -> Result<(), String> {
+    git_ops::rebase_branch(&repo_path, &onto_branch)
+}
+
+#[command]
+pub fn checkout_remote_branch(repo_path: String, remote_branch: String) -> Result<(), String> {
+    git_ops::checkout_remote_branch(&repo_path, &remote_branch)
+}
+
+#[command]
+pub fn stash_apply(repo_path: String, index: usize) -> Result<(), String> {
+    git_ops::stash_apply(&repo_path, index)
+}
+
+#[command]
+pub fn push_upstream(repo_path: String, remote: String, branch: String) -> Result<String, String> {
+    git_ops::push_upstream(&repo_path, &remote, &branch)
+}
+
+#[command]
+pub fn force_push(repo_path: String, remote: String, branch: String) -> Result<String, String> {
+    git_ops::force_push(&repo_path, &remote, &branch)
 }

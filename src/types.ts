@@ -78,3 +78,10 @@ export interface RepoCategory {
   /** id of a GitHubAccount from Settings > GitHub Accounts, or null */
   accountId: string | null;
 }
+
+export interface BranchAheadBehind {
+  name: string;
+  upstream: string;
+  ahead: number;
+  behind: number;
+}

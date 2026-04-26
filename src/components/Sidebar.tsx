@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import {
   GitBranch, GitCommit, Tag, Package, Cloud, ChevronDown,
   ChevronRight, Plus, Trash2, Check, GitFork, Circle,
-  GitMerge, Edit2, X, RefreshCw, Link
+  GitMerge, Edit2, X, RefreshCw, Link, Upload, Download, Shuffle
 } from "lucide-react";
-import type { BranchInfo, RepoSummary, TagInfo, StashInfo, RemoteInfo } from "../types";
+import type { BranchInfo, RepoSummary, TagInfo, StashInfo, RemoteInfo, BranchAheadBehind } from "../types";
 import type { Tab } from "../App";
 import * as api from "../api";
+import { useToast } from "../toast";
 
 interface Props {
   branches: BranchInfo[];
@@ -40,9 +41,23 @@ export default function Sidebar({
   const [newRemoteUrl, setNewRemoteUrl] = useState("");
   const [fetchingRemote, setFetchingRemote] = useState<string | null>(null);
   const [fetchingAll, setFetchingAll] = useState(false);
+  const [pushingBranch, setPushingBranch] = useState<string | null>(null);
+  const [pulling, setPulling] = useState(false);
+  const [aheadBehind, setAheadBehind] = useState<Map<string, { ahead: number; behind: number }>>(new Map());
+  const [pushingTag, setPushingTag] = useState<string | null>(null);
+  const [deletingRemoteBranch, setDeletingRemoteBranch] = useState<string | null>(null);
+  const toast = useToast();
 
   const loadRemotes = () => {
     api.getRemotes(repoPath).then(setRemotes).catch(() => setRemotes([]));
+  };
+
+  const loadAheadBehind = () => {
+    api.getBranchesAheadBehind(repoPath).then((data) => {
+      const m = new Map<string, { ahead: number; behind: number }>();
+      data.forEach((ab: BranchAheadBehind) => m.set(ab.name, { ahead: ab.ahead, behind: ab.behind }));
+      setAheadBehind(m);
+    }).catch(() => {});
   };
 
   const localBranches = branches.filter((b) => !b.is_remote);
@@ -52,6 +67,7 @@ export default function Sidebar({
     if (!repoPath) return;
     api.getStashes(repoPath).then(setStashes).catch(() => setStashes([]));
     loadRemotes();
+    loadAheadBehind();
   }, [repoPath]);
 
   const handleCreateBranch = async () => {
@@ -118,6 +134,97 @@ export default function Sidebar({
     }
   };
 
+  const handleStashApply = async (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    try {
+      await api.stashApply(repoPath, index);
+      onRefresh();
+    } catch (e) { alert(String(e)); }
+  };
+
+  const handlePushBranch = async (e: React.MouseEvent, branchName: string) => {
+    e.stopPropagation();
+    setPushingBranch(branchName);
+    try {
+      await api.pushUpstream(repoPath, "origin", branchName);
+      onRefresh();
+    } catch (ex) { alert(String(ex)); }
+    finally { setPushingBranch(null); }
+  };
+
+  const handleForcePush = async (e: React.MouseEvent, branchName: string) => {
+    e.stopPropagation();
+    if (!confirm(`Force-push "${branchName}" to origin? (uses --force-with-lease)`)) return;
+    setPushingBranch(branchName);
+    try {
+      await api.forcePush(repoPath, "origin", branchName);
+      onRefresh();
+    } catch (ex) { alert(String(ex)); }
+    finally { setPushingBranch(null); }
+  };
+
+  const handlePull = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPulling(true);
+    try {
+      const msg = await api.gitPull(repoPath);
+      toast.success(msg?.trim() || "Already up to date");
+      onRefresh();
+    } catch (ex) { toast.error(String(ex), 0); }
+    finally { setPulling(false); }
+  };
+
+  const handleRebaseBranch = async (e: React.MouseEvent, branchName: string) => {
+    e.stopPropagation();
+    if (!confirm(`Rebase current branch onto "${branchName}"?`)) return;
+    try { await api.rebaseBranch(repoPath, branchName); onRefresh(); }
+    catch (ex) { alert(String(ex)); }
+  };
+
+  const handleCheckoutRemote = async (e: React.MouseEvent, remoteBranch: string) => {
+    e.stopPropagation();
+    try { await api.checkoutRemoteBranch(repoPath, remoteBranch); onRefresh(); }
+    catch (ex) { alert(String(ex)); }
+  };
+
+  const handleSquashMerge = async (e: React.MouseEvent, branchName: string) => {
+    e.stopPropagation();
+    if (!confirm(`Squash-merge "${branchName}" into current branch? Changes will be staged but not committed.`)) return;
+    try {
+      const msg = await api.squashMerge(repoPath, branchName);
+      alert(msg);
+      onRefresh();
+    } catch (ex) { alert(String(ex)); }
+  };
+
+  const handlePushTag = async (e: React.MouseEvent, tagName: string) => {
+    e.stopPropagation();
+    setPushingTag(tagName);
+    try { await api.pushTag(repoPath, tagName); }
+    catch (ex) { alert(String(ex)); }
+    finally { setPushingTag(null); }
+  };
+
+  const handlePushAllTags = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try { await api.pushAllTags(repoPath); }
+    catch (ex) { alert(String(ex)); }
+  };
+
+  const handleDeleteRemoteBranch = async (e: React.MouseEvent, fullName: string) => {
+    e.stopPropagation();
+    // fullName is "origin/feature" - split into remote + branch
+    const slash = fullName.indexOf("/");
+    if (slash === -1) return;
+    const remote = fullName.slice(0, slash);
+    const branch = fullName.slice(slash + 1);
+    if (!confirm(`Delete remote branch "${fullName}"? This cannot be undone.`)) return;
+    setDeletingRemoteBranch(fullName);
+    try { await api.deleteRemoteBranch(repoPath, remote, branch); onRefresh(); }
+    catch (ex) { alert(String(ex)); }
+    finally { setDeletingRemoteBranch(null); }
+  };
+
   return (
     <div className="sidebar">
       <div className="sidebar-tabs">
@@ -140,6 +247,13 @@ export default function Sidebar({
       <div className="sidebar-section">
         <div className="section-header">
           <span className="section-title">Repository</span>
+          <button
+            className={`icon-btn${pulling ? " spin-btn" : ""}`}
+            title="Pull current branch"
+            onClick={handlePull}
+          >
+            <Download size={12} className={pulling ? "spin" : ""} />
+          </button>
         </div>
         <div className="repo-info">
           <div className="repo-head">
@@ -204,11 +318,37 @@ export default function Sidebar({
               <>
                 {b.is_head && <span className="head-indicator"><Circle size={7} fill="currentColor" /></span>}
                 <span className="branch-name" onClick={() => !b.is_head && onCheckout(b.name)}>{b.name}</span>
+                {(() => { const ab = aheadBehind.get(b.name); return ab && (ab.ahead > 0 || ab.behind > 0) ? (
+                  <span className="branch-ab">
+                    {ab.ahead > 0 && <span title={`${ab.ahead} commit(s) ahead`}>↑{ab.ahead}</span>}
+                    {ab.behind > 0 && <span title={`${ab.behind} commit(s) behind`}>↓{ab.behind}</span>}
+                  </span>
+                ) : null; })()}
+                <button
+                  className={`icon-btn${pushingBranch === b.name ? " spin-btn" : ""}`}
+                  onClick={(e) => handlePushBranch(e, b.name)}
+                  title={`Push ${b.name}`}
+                >
+                  <Upload size={10} className={pushingBranch === b.name ? "spin" : ""} />
+                </button>
+                <button
+                  className="icon-btn"
+                  onClick={(e) => handleForcePush(e, b.name)}
+                  title={`Force-push ${b.name} (--force-with-lease)`}
+                >
+                  <Upload size={10} style={{ opacity: 0.5 }} />
+                </button>
                 <button className="icon-btn" onClick={(e) => startRename(e, b.name)} title="Rename branch">
                   <Edit2 size={10} />
                 </button>
                 {!b.is_head && (
                   <>
+                    <button className="icon-btn" onClick={(e) => handleRebaseBranch(e, b.name)} title={`Rebase current branch onto ${b.name}`}>
+                      <Shuffle size={10} />
+                    </button>
+                    <button className="icon-btn" onClick={(e) => handleSquashMerge(e, b.name)} title={`Squash-merge ${b.name} into current branch`}>
+                      <GitMerge size={10} style={{ opacity: 0.6 }} />
+                    </button>
                     <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onMerge(b.name); }} title={`Merge ${b.name} into current branch`}>
                       <GitMerge size={10} />
                     </button>
@@ -331,7 +471,21 @@ export default function Sidebar({
             {remoteBranches.map((b) => (
               <div key={b.name} className="branch-item remote" style={{ paddingLeft: 20 }}>
                 <GitBranch size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
-                <span className="branch-name">{b.name}</span>
+                <span className="branch-name" style={{ flex: 1 }}>{b.name}</span>
+                <button
+                  className="icon-btn"
+                  title={`Checkout ${b.name} as local branch`}
+                  onClick={(e) => handleCheckoutRemote(e, b.name)}
+                >
+                  <GitBranch size={10} />
+                </button>
+                <button
+                  className={`icon-btn danger${deletingRemoteBranch === b.name ? " spin-btn" : ""}`}
+                  title={`Delete remote branch ${b.name}`}
+                  onClick={(e) => handleDeleteRemoteBranch(e, b.name)}
+                >
+                  <Trash2 size={10} />
+                </button>
               </div>
             ))}
           </div>
@@ -348,6 +502,13 @@ export default function Sidebar({
           <Tag size={12} />
           <span className="section-title">Tags</span>
           <span className="badge">{tags.length}</span>
+          <button
+            className="icon-btn"
+            onClick={(e) => handlePushAllTags(e)}
+            title="Push all tags to origin"
+          >
+            <Upload size={11} />
+          </button>
           <button
             className="icon-btn"
             onClick={(e) => { e.stopPropagation(); setShowNewTag((v) => !v); setTagsOpen(true); }}
@@ -392,7 +553,14 @@ export default function Sidebar({
         {tagsOpen && tags.map((t) => (
           <div key={t.name} className="branch-item">
             <Tag size={10} style={{ opacity: 0.6, flexShrink: 0 }} />
-            <span className="branch-name">{t.name}</span>
+            <span className="branch-name" style={{ flex: 1 }}>{t.name}</span>
+            <button
+              className={`icon-btn${pushingTag === t.name ? " spin-btn" : ""}`}
+              title={`Push tag ${t.name} to origin`}
+              onClick={(e) => handlePushTag(e, t.name)}
+            >
+              <Upload size={10} className={pushingTag === t.name ? "spin" : ""} />
+            </button>
             <button
               className="icon-btn danger"
               title="Delete tag"
@@ -425,7 +593,14 @@ export default function Sidebar({
             <span className="branch-name" style={{ flex: 1 }}>{s.message}</span>
             <button
               className="icon-btn"
-              title="Pop stash"
+              title="Apply stash (keep in stash list)"
+              onClick={(e) => handleStashApply(e, s.index)}
+            >
+              <Download size={10} />
+            </button>
+            <button
+              className="icon-btn"
+              title="Pop stash (apply & remove)"
               onClick={(e) => { e.stopPropagation(); handleStashPop(s.index); }}
             >
               <Check size={10} />

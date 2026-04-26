@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3 } from "lucide-react";
+import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3, Terminal } from "lucide-react";
 import type { FileStatus, FileDiff } from "../types";
 import * as api from "../api";
 import DiffViewer from "./DiffViewer";
@@ -88,6 +88,19 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
     }
   };
 
+  const handleDiscardAll = async () => {
+    const tracked = unstaged.filter((f) => f.status !== "untracked");
+    if (tracked.length === 0) return;
+    if (!confirm(`Discard all ${tracked.length} tracked change(s)? This cannot be undone.`)) return;
+    try {
+      await api.discardAll(repoPath);
+      onRefresh();
+      toast.success("All tracked changes discarded");
+    } catch (e) {
+      toast.error(String(e));
+    }
+  };
+
   const handleStash = async () => {
     try {
       await api.stashSave(repoPath, stashMsg || "WIP stash");
@@ -168,9 +181,14 @@ export default function WorkingDirectory({ repoPath, status, onRefresh }: Props)
           <div className="wd-section-header">
             <span>Unstaged Changes ({unstaged.length})</span>
             {unstaged.length > 0 && (
-              <button className="icon-btn" onClick={handleStageAll} title="Stage all">
-                <Plus size={12} />
-              </button>
+              <>
+                <button className="icon-btn danger" onClick={handleDiscardAll} title="Discard all tracked changes">
+                  <RotateCcw size={12} />
+                </button>
+                <button className="icon-btn" onClick={handleStageAll} title="Stage all">
+                  <Plus size={12} />
+                </button>
+              </>
             )}
           </div>
           {unstaged.length === 0 ? (

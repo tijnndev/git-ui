@@ -1,6 +1,19 @@
 use git2::{Repository, BranchType, StatusOptions, Oid, Signature};
 use std::path::Path;
+use std::process::Command;
 use crate::models::*;
+
+/// Create a `git` Command that never spawns a visible console window on Windows.
+fn git_cmd() -> Command {
+    let mut cmd = Command::new("git");
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
 
 fn map_status(s: git2::Status) -> String {
     if s.contains(git2::Status::INDEX_NEW) { return "added".into(); }
@@ -447,8 +460,7 @@ pub fn clone_repo(url: &str, dest: &str) -> Result<(), String> {
 }
 
 pub fn pull(repo_path: &str) -> Result<String, String> {
-    use std::process::Command;
-    let output = Command::new("git")
+    let output = git_cmd()
         .args(["pull"])
         .current_dir(repo_path)
         .output()
@@ -464,16 +476,15 @@ pub fn pull(repo_path: &str) -> Result<String, String> {
 }
 
 pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
-    use std::process::Command;
     // `git restore` (git ≥ 2.23) discards working-tree changes cleanly.
     // Fall back to `git checkout HEAD -- <file>` for older versions.
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["restore", "--", file_path])
         .current_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
     if out.status.success() { return Ok(()); }
-    let out2 = Command::new("git")
+    let out2 = git_cmd()
         .args(["checkout", "HEAD", "--", file_path])
         .current_dir(repo_path)
         .output()
@@ -484,8 +495,7 @@ pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
 }
 
 pub fn merge_branch(repo_path: &str, branch_name: &str) -> Result<String, String> {
-    use std::process::Command;
-    let output = Command::new("git")
+    let output = git_cmd()
         .args(["merge", branch_name])
         .current_dir(repo_path)
         .output()
@@ -543,8 +553,7 @@ pub fn stash_drop(repo_path: &str, index: usize) -> Result<(), String> {
 }
 
 pub fn cherry_pick(repo_path: &str, commit_oid: &str) -> Result<(), String> {
-    use std::process::Command;
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["cherry-pick", commit_oid])
         .current_dir(repo_path)
         .output()
@@ -555,8 +564,7 @@ pub fn cherry_pick(repo_path: &str, commit_oid: &str) -> Result<(), String> {
 }
 
 pub fn revert_commit(repo_path: &str, commit_oid: &str) -> Result<(), String> {
-    use std::process::Command;
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["revert", "--no-edit", commit_oid])
         .current_dir(repo_path)
         .output()
@@ -567,13 +575,12 @@ pub fn revert_commit(repo_path: &str, commit_oid: &str) -> Result<(), String> {
 }
 
 pub fn reset_to_commit(repo_path: &str, commit_oid: &str, mode: &str) -> Result<(), String> {
-    use std::process::Command;
     let flag = match mode {
         "soft"  => "--soft",
         "hard"  => "--hard",
         _       => "--mixed",
     };
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["reset", flag, commit_oid])
         .current_dir(repo_path)
         .output()
@@ -584,8 +591,7 @@ pub fn reset_to_commit(repo_path: &str, commit_oid: &str, mode: &str) -> Result<
 }
 
 pub fn checkout_commit(repo_path: &str, commit_oid: &str) -> Result<(), String> {
-    use std::process::Command;
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["checkout", commit_oid])
         .current_dir(repo_path)
         .output()
@@ -618,9 +624,8 @@ pub fn delete_tag(repo_path: &str, name: &str) -> Result<(), String> {
 }
 
 pub fn get_file_history(repo_path: &str, file_path: &str, limit: usize) -> Result<Vec<CommitInfo>, String> {
-    use std::process::Command;
     // Use git log with --follow to handle renames
-    let out = Command::new("git")
+    let out = git_cmd()
         .args([
             "log",
             &format!("--max-count={}", limit),
@@ -672,8 +677,7 @@ pub fn remove_remote(repo_path: &str, name: &str) -> Result<(), String> {
 }
 
 pub fn fetch_all(repo_path: &str) -> Result<(), String> {
-    use std::process::Command;
-    let out = Command::new("git")
+    let out = git_cmd()
         .args(["fetch", "--all"])
         .current_dir(repo_path)
         .output()
@@ -684,7 +688,6 @@ pub fn fetch_all(repo_path: &str) -> Result<(), String> {
 }
 
 pub fn open_in_explorer(path: &str) -> Result<(), String> {
-    use std::process::Command;
     #[cfg(target_os = "windows")]
     Command::new("explorer").arg(path).spawn().map_err(|e| e.to_string())?;
     #[cfg(target_os = "macos")]
@@ -692,4 +695,216 @@ pub fn open_in_explorer(path: &str) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     Command::new("xdg-open").arg(path).spawn().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn open_terminal(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        // Try Windows Terminal first, fall back to cmd
+        if Command::new("wt").args(["-d", path]).spawn().is_ok() {
+            return Ok(());
+        }
+        Command::new("cmd")
+            .args(["/C", "start", "/d", path, "cmd"])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "macos")]
+    Command::new("open").args(["-a", "Terminal", path]).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    {
+        for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xfce4-terminal", "xterm"] {
+            if Command::new(term).args(["--working-directory", path]).spawn().is_ok() {
+                return Ok(());
+            }
+        }
+        return Err("No terminal emulator found".to_string());
+    }
+    Ok(())
+}
+
+pub fn discard_all(repo_path: &str) -> Result<(), String> {
+    let out = git_cmd()
+        .args(["restore", "."])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    // Fallback for older git
+    let out2 = git_cmd()
+        .args(["checkout", "HEAD", "--", "."])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out2.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "discard all failed".to_string() } else { err })
+}
+
+pub fn push_tag(repo_path: &str, tag_name: &str, remote: &str) -> Result<(), String> {
+    let out = git_cmd()
+        .args(["push", remote, tag_name])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "push tag failed".to_string() } else { err })
+}
+
+pub fn push_all_tags(repo_path: &str, remote: &str) -> Result<(), String> {
+    let out = git_cmd()
+        .args(["push", remote, "--tags"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "push tags failed".to_string() } else { err })
+}
+
+pub fn delete_remote_branch(repo_path: &str, remote: &str, branch: &str) -> Result<(), String> {
+    let out = git_cmd()
+        .args(["push", remote, "--delete", branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "delete remote branch failed".to_string() } else { err })
+}
+
+pub fn squash_merge(repo_path: &str, branch_name: &str) -> Result<String, String> {
+    let output = git_cmd()
+        .args(["merge", "--squash", branch_name])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Squash complete — changes are staged, commit when ready".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "squash merge failed".to_string() } else { combined })
+    }
+}
+
+pub fn get_branches_ahead_behind(repo_path: &str) -> Result<Vec<crate::models::BranchAheadBehind>, String> {
+    let out = git_cmd()
+        .args(["for-each-ref", "--format=%(refname:short)|%(upstream:short)", "refs/heads"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut result = Vec::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(2, '|');
+        let branch = match parts.next() { Some(s) => s.trim(), None => continue };
+        let upstream = match parts.next() { Some(s) => s.trim(), None => continue };
+        if upstream.is_empty() { continue; }
+        let ahead: u32 = git_cmd()
+            .args(["rev-list", "--count", &format!("{}..{}", upstream, branch)])
+            .current_dir(repo_path)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        let behind: u32 = git_cmd()
+            .args(["rev-list", "--count", &format!("{}..{}", branch, upstream)])
+            .current_dir(repo_path)
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+        result.push(crate::models::BranchAheadBehind {
+            name: branch.to_string(),
+            upstream: upstream.to_string(),
+            ahead,
+            behind,
+        });
+    }
+    Ok(result)
+}
+
+pub fn get_head_behind(repo_path: &str) -> Result<u32, String> {
+    let out = git_cmd()
+        .args(["rev-list", "--count", "HEAD..@{u}"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !out.status.success() { return Ok(0); } // no upstream configured
+    let n: u32 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap_or(0);
+    Ok(n)
+}
+
+pub fn rebase_branch(repo_path: &str, onto_branch: &str) -> Result<(), String> {
+    let out = git_cmd()
+        .args(["rebase", onto_branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "rebase failed".to_string() } else { err })
+}
+
+pub fn checkout_remote_branch(repo_path: &str, remote_branch: &str) -> Result<(), String> {
+    // Derive local branch name: "origin/feature" → "feature"
+    let local_name = remote_branch.splitn(2, '/').last().unwrap_or(remote_branch);
+    let out = git_cmd()
+        .args(["checkout", "-b", local_name, "--track", remote_branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() { return Ok(()); }
+    // Branch may already exist locally — just switch to it
+    let out2 = git_cmd()
+        .args(["checkout", local_name])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out2.status.success() { return Ok(()); }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "checkout failed".to_string() } else { err })
+}
+
+pub fn stash_apply(repo_path: &str, index: usize) -> Result<(), String> {
+    let mut repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    repo.stash_apply(index, None).map_err(|e| e.message().to_string())?;
+    Ok(())
+}
+
+pub fn push_upstream(repo_path: &str, remote: &str, branch: &str) -> Result<String, String> {
+    let output = git_cmd()
+        .args(["push", "-u", remote, branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Push successful".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git push failed".to_string() } else { combined })
+    }
+}
+
+pub fn force_push(repo_path: &str, remote: &str, branch: &str) -> Result<String, String> {
+    let output = git_cmd()
+        .args(["push", "--force-with-lease", remote, branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Force push successful".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git push --force-with-lease failed".to_string() } else { combined })
+    }
 }

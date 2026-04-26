@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid, Settings, Download } from "lucide-react";
+import { FolderOpen, RefreshCw, Minus, Square, X, GitBranch, LayoutGrid, Settings, Download, Terminal } from "lucide-react";
+import * as api from "../api";
 
 // Stable reference - created once at module load, not per render
 const appWindow = getCurrentWindow();
@@ -41,6 +42,11 @@ export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoH
         {repoPath && onPull && (
           <button className="titlebar-btn" onClick={onPull} disabled={pulling} title="Pull from upstream">
             <Download size={14} />
+          </button>
+        )}
+        {repoPath && (
+          <button className="titlebar-btn" onClick={() => api.openTerminal(repoPath)} title="Open terminal in repo">
+            <Terminal size={14} />
           </button>
         )}
         {repoPath && (

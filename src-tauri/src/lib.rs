@@ -52,6 +52,19 @@ pub fn run() {
             remove_remote,
             fetch_all,
             open_in_explorer,
+            rebase_branch,
+            checkout_remote_branch,
+            stash_apply,
+            push_upstream,
+            force_push,
+            open_terminal,
+            discard_all,
+            push_tag,
+            push_all_tags,
+            delete_remote_branch,
+            squash_merge,
+            get_branches_ahead_behind,
+            get_head_behind,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

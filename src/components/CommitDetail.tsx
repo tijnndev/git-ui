@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, FileText, GitMerge, RotateCcw, Tag, ArrowDown, History, ChevronDown } from "lucide-react";
+import { X, FileText, GitMerge, RotateCcw, Tag, ArrowDown, History, ChevronDown, Copy, GitBranch } from "lucide-react";
 import type { CommitInfo, FileStatus, FileDiff } from "../types";
 import * as api from "../api";
 import DiffViewer from "./DiffViewer";
@@ -22,6 +22,8 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
   const [tagMsg, setTagMsg] = useState("");
   const [showTagForm, setShowTagForm] = useState(false);
   const [showResetMenu, setShowResetMenu] = useState(false);
+  const [showBranchForm, setShowBranchForm] = useState(false);
+  const [newBranchName, setNewBranchName] = useState("");
   const toast = useToast();
 
   useEffect(() => {
@@ -91,6 +93,21 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
     } catch (e) { toast.error(String(e), 0); }
   };
 
+  const handleCopySha = async () => {
+    await navigator.clipboard.writeText(commit.oid);
+    toast.success("SHA copied to clipboard");
+  };
+
+  const handleCreateBranch = async () => {
+    if (!newBranchName.trim()) return;
+    try {
+      await api.createBranch(repoPath, newBranchName.trim(), commit.oid);
+      toast.success(`Branch "${newBranchName.trim()}" created`);
+      setNewBranchName(""); setShowBranchForm(false);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  };
+
   const date = new Date(commit.timestamp * 1000);
 
   return (
@@ -101,7 +118,7 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
           <div className="commit-info-row">
             <span className="commit-author">{commit.author_name} &lt;{commit.author_email}&gt;</span>
             <span className="commit-date">{date.toLocaleString()}</span>
-            <span className="commit-hash monospace">{commit.oid}</span>
+          <span className="commit-hash monospace" style={{ cursor: "pointer" }} onClick={handleCopySha} title="Click to copy">{commit.oid}</span>
           </div>
         </div>
         <button className="icon-btn" onClick={onClose}><X size={14} /></button>
@@ -133,9 +150,9 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
           </button>
           {showResetMenu && (
             <div className="dropdown-menu">
-              <button onClick={() => handleReset("soft")}>Soft — keep changes staged</button>
-              <button onClick={() => handleReset("mixed")}>Mixed — keep changes unstaged</button>
-              <button onClick={() => handleReset("hard")} className="danger">Hard — discard all changes</button>
+              <button onClick={() => handleReset("soft")}>Soft - keep changes staged</button>
+              <button onClick={() => handleReset("mixed")}>Mixed - keep changes unstaged</button>
+              <button onClick={() => handleReset("hard")} className="danger">Hard - discard all changes</button>
             </div>
           )}
         </div>
@@ -143,7 +160,30 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
           <Tag size={13} />
           Tag
         </button>
+        <button className="commit-action-btn" onClick={() => setShowBranchForm((v) => !v)} title="Create a new branch at this commit">
+          <GitBranch size={13} />
+          Branch
+        </button>
+        <button className="commit-action-btn" onClick={handleCopySha} title="Copy full SHA to clipboard">
+          <Copy size={13} />
+          Copy SHA
+        </button>
       </div>
+
+      {showBranchForm && (
+        <div className="tag-form">
+          <input
+            autoFocus
+            placeholder="New branch name"
+            value={newBranchName}
+            onChange={(e) => setNewBranchName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCreateBranch(); if (e.key === "Escape") setShowBranchForm(false); }}
+          />
+          <button className="btn-primary" onClick={handleCreateBranch} disabled={!newBranchName.trim()}>
+            <GitBranch size={12} /> Create Branch
+          </button>
+        </div>
+      )}
 
       {showTagForm && (
         <div className="tag-form">
@@ -155,7 +195,7 @@ export default function CommitDetail({ commit, repoPath, onClose, onRefresh, onO
             onKeyDown={(e) => { if (e.key === "Enter") handleCreateTag(); if (e.key === "Escape") setShowTagForm(false); }}
           />
           <input
-            placeholder="Message (optional — leave blank for lightweight tag)"
+            placeholder="Message (optional - leave blank for lightweight tag)"
             value={tagMsg}
             onChange={(e) => setTagMsg(e.target.value)}
           />

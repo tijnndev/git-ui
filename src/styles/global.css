@@ -307,6 +307,16 @@ body {
   white-space: nowrap;
 }
 
+.branch-ab {
+  display: flex;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.branch-ab span:first-child { color: var(--green); }
+.branch-ab span:last-child  { color: #e8b84b; }
+
 .new-branch-form {
   display: flex;
   gap: 4px;
@@ -1494,10 +1504,11 @@ body {
 .launchpad-body {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 32px;
+  padding: 12px 32px;
   display: flex;
   flex-direction: column;
   gap: 28px;
+  margin-top: 12px;
 }
 
 .launchpad-empty {
@@ -1603,6 +1614,15 @@ body {
   height: 7px;
   border-radius: 50%;
   background: #e8b84b;
+  display: inline-block;
+}
+
+.repo-behind-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #60a8f0;
   display: inline-block;
 }
 

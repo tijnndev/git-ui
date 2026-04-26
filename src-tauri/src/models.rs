@@ -74,3 +74,11 @@ pub struct RepoSummary {
     pub head_oid: Option<String>,
     pub is_bare: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BranchAheadBehind {
+    pub name: String,
+    pub upstream: String,
+    pub ahead: u32,
+    pub behind: u32,
+}

@@ -7,7 +7,7 @@ let _store: Promise<Store> | null = null;
 
 function getStore(): Promise<Store> {
   if (!_store) {
-    _store = Store.load("git-ui.json", { autoSave: false });
+    _store = Store.load("git-ui.json", { autoSave: false, defaults: {} });
   }
   return _store;
 }

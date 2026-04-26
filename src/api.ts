@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   CommitInfo, BranchInfo, FileStatus, FileDiff,
-  RemoteInfo, StashInfo, TagInfo, RepoSummary
+  RemoteInfo, StashInfo, TagInfo, RepoSummary, BranchAheadBehind
 } from "./types";
 
 export async function getRepoSummary(repoPath: string): Promise<RepoSummary> {
@@ -170,4 +170,56 @@ export async function fetchAll(repoPath: string): Promise<void> {
 
 export async function openInExplorer(path: string): Promise<void> {
   return invoke("open_in_explorer", { path });
+}
+
+export async function rebaseBranch(repoPath: string, ontoBranch: string): Promise<void> {
+  return invoke("rebase_branch", { repoPath, ontoBranch });
+}
+
+export async function checkoutRemoteBranch(repoPath: string, remoteBranch: string): Promise<void> {
+  return invoke("checkout_remote_branch", { repoPath, remoteBranch });
+}
+
+export async function stashApply(repoPath: string, index: number): Promise<void> {
+  return invoke("stash_apply", { repoPath, index });
+}
+
+export async function pushUpstream(repoPath: string, remote: string, branch: string): Promise<string> {
+  return invoke("push_upstream", { repoPath, remote, branch });
+}
+
+export async function forcePush(repoPath: string, remote: string, branch: string): Promise<string> {
+  return invoke("force_push", { repoPath, remote, branch });
+}
+
+export async function openTerminal(path: string): Promise<void> {
+  return invoke("open_terminal", { path });
+}
+
+export async function discardAll(repoPath: string): Promise<void> {
+  return invoke("discard_all", { repoPath });
+}
+
+export async function pushTag(repoPath: string, tagName: string, remote = "origin"): Promise<void> {
+  return invoke("push_tag", { repoPath, tagName, remote });
+}
+
+export async function pushAllTags(repoPath: string, remote = "origin"): Promise<void> {
+  return invoke("push_all_tags", { repoPath, remote });
+}
+
+export async function deleteRemoteBranch(repoPath: string, remote: string, branch: string): Promise<void> {
+  return invoke("delete_remote_branch", { repoPath, remote, branch });
+}
+
+export async function squashMerge(repoPath: string, branchName: string): Promise<string> {
+  return invoke("squash_merge", { repoPath, branchName });
+}
+
+export async function getBranchesAheadBehind(repoPath: string): Promise<BranchAheadBehind[]> {
+  return invoke("get_branches_ahead_behind", { repoPath });
+}
+
+export async function getHeadBehind(repoPath: string): Promise<number> {
+  return invoke("get_head_behind", { repoPath });
 }

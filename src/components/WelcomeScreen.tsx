@@ -3,7 +3,7 @@ import { FolderOpen, FolderPlus, Star, Trash2, GitBranch, Clock, Plus, Tag, Edit
 import type { RecentRepo, RepoCategory } from "../types";
 import { loadAccounts } from "../github-accounts";
 import type { GitHubAccount } from "../github-accounts";
-import { getStatus, cloneRepo, openInExplorer } from "../api";
+import { getStatus, cloneRepo, openInExplorer, getHeadBehind } from "../api";
 import { open } from "@tauri-apps/plugin-dialog";
 
 const PRESET_COLORS = [
@@ -414,6 +414,7 @@ interface RepoCardProps {
   selected: boolean;
   selectionActive: boolean;
   hasDirty: boolean;
+  hasBehind: boolean;
   onOpen: () => void;
   onPin: () => void;
   onRemove: () => void;
@@ -423,7 +424,7 @@ interface RepoCardProps {
   onOpenAssign: (e: React.MouseEvent) => void;
 }
 
-function RepoCard({ repo, categories, selected, selectionActive, hasDirty, onOpen, onPin, onRemove, onAssignCategory, onToggleSelect, assignOpen, onOpenAssign }: RepoCardProps) {
+function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBehind, onOpen, onPin, onRemove, onAssignCategory, onToggleSelect, assignOpen, onOpenAssign }: RepoCardProps) {
   const category = categories.find((c) => c.id === repo.categoryId);
 
   return (
@@ -454,6 +455,7 @@ function RepoCard({ repo, categories, selected, selectionActive, hasDirty, onOpe
         <div className="launchpad-card-name">
             {repo.name}
             {hasDirty && <span className="repo-dirty-dot" title="Uncommitted changes" />}
+            {hasBehind && <span className="repo-behind-dot" title="Commits to pull" />}
           </div>
         <div className="launchpad-card-path">{repo.path}</div>
         <div className="launchpad-card-meta">
@@ -559,6 +561,7 @@ export default function WelcomeScreen({
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
   const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
+  const [behindPaths, setBehindPaths] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -571,6 +574,16 @@ export default function WelcomeScreen({
         if (r.status === "fulfilled" && r.value.length > 0) dirty.add(paths[i]);
       });
       setDirtyPaths(dirty);
+    })();
+    // Check behind in parallel
+    (async () => {
+      const results = await Promise.allSettled(paths.map((p) => getHeadBehind(p)));
+      if (cancelled) return;
+      const behind = new Set<string>();
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled" && r.value > 0) behind.add(paths[i]);
+      });
+      setBehindPaths(behind);
     })();
     return () => { cancelled = true; };
   }, [recentRepos]);
@@ -622,6 +635,7 @@ export default function WelcomeScreen({
         selected={selectedPaths.has(repo.path)}
         selectionActive={selectionActive}
         hasDirty={dirtyPaths.has(repo.path)}
+        hasBehind={behindPaths.has(repo.path)}
         onOpen={() => onSelectRecent(repo.path)}
         onPin={() => onPinToggle(repo.path)}
         onRemove={() => onRemove(repo.path)}
@@ -686,7 +700,8 @@ export default function WelcomeScreen({
           placeholder="Search repositories…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-        />
+        >
+        </input>
         {search && (
           <button className="launchpad-search-clear" onClick={() => setSearch("")}>
             <X size={12} />

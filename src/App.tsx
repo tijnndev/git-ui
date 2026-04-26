@@ -16,6 +16,7 @@ import { loadSettings, saveSettings, DEFAULT_SETTINGS, applySettings } from "./s
 import { storeGet, storeSet } from "./store";
 import { nanoid } from "./nanoid";
 import * as api from "./api";
+import { useToast } from "./toast";
 
 export type Tab = "graph" | "working";
 
@@ -36,6 +37,7 @@ async function loadRecentRepos(): Promise<RecentRepo[]> {
 }
 
 export default function App() {
+  const toast = useToast();
   const [repoPath, setRepoPath] = useState<string | null>(null);
   const [repoSummary, setRepoSummary] = useState<RepoSummary | null>(null);
   const [commits, setCommits] = useState<CommitInfo[]>([]);
@@ -173,14 +175,15 @@ export default function App() {
     setPulling(true);
     setError(null);
     try {
-      await api.gitPull(repoPath);
+      const msg = await api.gitPull(repoPath);
+      toast.success(msg?.trim() || "Already up to date");
       refresh();
     } catch (e) {
-      setError(String(e));
+      toast.error(String(e), 0);
     } finally {
       setPulling(false);
     }
-  }, [repoPath, pulling, refresh]);
+  }, [repoPath, pulling, refresh, toast]);
 
   const togglePin = useCallback((path: string) => {
     const updated = recentRepos.map((r) =>
