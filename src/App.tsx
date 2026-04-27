@@ -17,6 +17,7 @@ import { loadSettings, saveSettings, DEFAULT_SETTINGS, applySettings } from "./s
 import { storeGet, storeSet } from "./store";
 import { nanoid } from "./nanoid";
 import * as api from "./api";
+import { loadAccounts, findAccountForUrl, injectToken } from "./github-accounts";
 import { useToast } from "./toast";
 
 function repoName(path: string): string {
@@ -237,7 +238,35 @@ export default function App() {
     setPulling(true);
     setError(null);
     try {
-      const msg = await api.gitPull(repoPath);
+      const categoryAccountId =
+        categories.find(
+          (c) => c.id === recentRepos.find((r) => r.path === repoPath)?.categoryId
+        )?.accountId ?? null;
+
+      let remoteArg: string | undefined;
+      try {
+        const remoteUrl = await api.getRemoteUrl(repoPath, "origin");
+        const accounts = await loadAccounts();
+        const account =
+          (categoryAccountId ? accounts.find((a) => a.id === categoryAccountId) : null)
+          ?? findAccountForUrl(remoteUrl, accounts);
+
+        if (categoryAccountId && !account) {
+          toast.error(
+            "No GitHub account found for this category. Go to Settings → GitHub Accounts and re-add your account.",
+            0,
+          );
+          return;
+        }
+
+        if (account) {
+          remoteArg = injectToken(remoteUrl, account);
+        }
+      } catch {
+        // No remote configured – fall back to plain pull
+      }
+
+      const msg = await api.gitPull(repoPath, remoteArg);
       toast.success(msg?.trim() || "Already up to date");
       refresh();
     } catch (e) {
@@ -245,7 +274,7 @@ export default function App() {
     } finally {
       setPulling(false);
     }
-  }, [repoPath, pulling, refresh, toast]);
+  }, [repoPath, pulling, refresh, toast, categories, recentRepos]);
 
   const togglePin = useCallback((path: string) => {
     const updated = recentRepos.map((r) =>

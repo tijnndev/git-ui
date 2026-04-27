@@ -182,8 +182,30 @@ pub fn get_remote_url(repo_path: String, remote: String) -> Result<String, Strin
 }
 
 #[command]
-pub fn git_pull(repo_path: String) -> Result<String, String> {
-    git_ops::pull(&repo_path)
+pub fn git_pull(repo_path: String, remote: Option<String>) -> Result<String, String> {
+    let remote_name = remote.unwrap_or_else(|| "origin".to_string());
+
+    let mut cmd = git_cmd();
+    // Bypass Windows Git Credential Manager so embedded credentials in the URL are used.
+    if remote_name.contains('@') {
+        cmd.arg("-c").arg("credential.helper=");
+    }
+    cmd.args(["pull", &remote_name]);
+
+    let output = cmd
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}{}", stdout, stderr).trim().to_string();
+
+    if output.status.success() {
+        Ok(if combined.is_empty() { "Already up to date.".to_string() } else { combined })
+    } else {
+        Err(if combined.is_empty() { "git pull failed".to_string() } else { combined })
+    }
 }
 
 #[command]

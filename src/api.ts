@@ -104,8 +104,8 @@ export async function cloneRepo(url: string, dest: string): Promise<void> {
   return invoke("clone_repo", { url, dest });
 }
 
-export async function gitPull(repoPath: string): Promise<string> {
-  return invoke("git_pull", { repoPath });
+export async function gitPull(repoPath: string, remote?: string): Promise<string> {
+  return invoke("git_pull", { repoPath, remote });
 }
 
 export async function discardFile(repoPath: string, filePath: string): Promise<void> {
