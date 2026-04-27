@@ -466,7 +466,7 @@ function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBe
       </div>
       <div className="launchpad-card-info">
         <div className="launchpad-card-name">
-            {repo.name}
+            <span className="launchpad-card-name-text">{repo.name}</span>
             {hasDirty && <span className="repo-dirty-dot" title="Uncommitted changes" />}
             {hasBehind && <span className="repo-behind-dot" title="Commits to pull" />}
           </div>
@@ -582,25 +582,31 @@ export default function WelcomeScreen({
   useEffect(() => {
     let cancelled = false;
     const paths = recentRepos.map((r) => r.path);
+
+    // Process sequentially to avoid flooding the Tauri IPC channel.
+    // Parallel Promise.allSettled for 20+ repos saturates the channel and
+    // delays any loadRepo calls until all of them complete.
     (async () => {
-      const results = await Promise.allSettled(paths.map((p) => getStatus(p)));
-      if (cancelled) return;
       const dirty = new Set<string>();
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled" && r.value.length > 0) dirty.add(paths[i]);
-      });
-      setDirtyPaths(dirty);
-    })();
-    // Check behind in parallel
-    (async () => {
-      const results = await Promise.allSettled(paths.map((p) => getHeadBehind(p)));
-      if (cancelled) return;
       const behind = new Set<string>();
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled" && r.value > 0) behind.add(paths[i]);
-      });
-      setBehindPaths(behind);
+      for (const p of paths) {
+        if (cancelled) return;
+        const [statusResult, behindResult] = await Promise.allSettled([
+          getStatus(p),
+          getHeadBehind(p),
+        ]);
+        if (cancelled) return;
+        if (statusResult.status === "fulfilled" && statusResult.value.length > 0) dirty.add(p);
+        if (behindResult.status === "fulfilled" && behindResult.value > 0) behind.add(p);
+        // Yield to the event loop between repos so clicks aren't blocked
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
+      if (!cancelled) {
+        setDirtyPaths(dirty);
+        setBehindPaths(behind);
+      }
     })();
+
     return () => { cancelled = true; };
   }, [recentRepos]);
 
@@ -688,22 +694,60 @@ export default function WelcomeScreen({
           <p className="launchpad-subtitle">Your Git launchpad</p>
         </div>
         <div className="launchpad-header-actions">
-          <button className="btn-secondary" onClick={() => setShowCategoryForm(true)}>
-            <Plus size={13} />
-            New Category
-          </button>
-          <button className="btn-secondary" onClick={() => setShowCloneDialog(true)}>
-            <Download size={13} />
-            Clone Repo
-          </button>
-          <button className="btn-secondary" onClick={onOpenMultiple}>
-            <FolderPlus size={14} />
-            Add Repos
-          </button>
-          <button className="btn-primary" onClick={onOpenRepo}>
-            <FolderOpen size={15} />
-            Open Repository
-          </button>
+          {selectionActive ? (
+            <>
+              <span className="bulk-count">{selectedPaths.size} selected</span>
+              <div className="bulk-action-dropdown" ref={bulkMenuRef}>
+                <button
+                  className="btn-secondary"
+                  onClick={() => setBulkMenuOpen((v) => !v)}
+                >
+                  <MoveRight size={13} />
+                  Move to category
+                </button>
+                {bulkMenuOpen && (
+                  <div className="bulk-menu">
+                    <button className="assign-option" onMouseDown={() => { bulkMove(null); setBulkMenuOpen(false); }}>
+                      <span className="category-dot-sm" style={{ background: "var(--text-muted)" }} />
+                      Uncategorized
+                    </button>
+                    {categories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        className="assign-option"
+                        onMouseDown={() => { bulkMove(cat.id); setBulkMenuOpen(false); }}
+                      >
+                        <span className="category-dot-sm" style={{ background: cat.color }} />
+                        {cat.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button className="icon-btn" title="Clear selection" onClick={clearSelection}>
+                <X size={14} />
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn-secondary" onClick={() => setShowCategoryForm(true)}>
+                <Plus size={13} />
+                New Category
+              </button>
+              <button className="btn-secondary" onClick={() => setShowCloneDialog(true)}>
+                <Download size={13} />
+                Clone Repo
+              </button>
+              <button className="btn-secondary" onClick={onOpenMultiple}>
+                <FolderPlus size={14} />
+                Add Repos
+              </button>
+              <button className="btn-primary" onClick={onOpenRepo}>
+                <FolderOpen size={15} />
+                Open Repository
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -724,43 +768,6 @@ export default function WelcomeScreen({
           </button>
         )}
       </div>
-
-      {/* Bulk action bar */}
-      {selectionActive && (
-        <div className="bulk-action-bar">
-          <span className="bulk-count">{selectedPaths.size} selected</span>
-          <div className="bulk-action-dropdown" ref={bulkMenuRef}>
-            <button
-              className="btn-secondary"
-              onClick={() => setBulkMenuOpen((v) => !v)}
-            >
-              <MoveRight size={13} />
-              Move to category
-            </button>
-            {bulkMenuOpen && (
-              <div className="bulk-menu">
-                <button className="assign-option" onMouseDown={() => { bulkMove(null); setBulkMenuOpen(false); }}>
-                  <span className="category-dot-sm" style={{ background: "var(--text-muted)" }} />
-                  Uncategorized
-                </button>
-                {categories.map((cat) => (
-                  <button
-                    key={cat.id}
-                    className="assign-option"
-                    onMouseDown={() => { bulkMove(cat.id); setBulkMenuOpen(false); }}
-                  >
-                    <span className="category-dot-sm" style={{ background: cat.color }} />
-                    {cat.name}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <button className="icon-btn" title="Clear selection" onClick={clearSelection}>
-            <X size={14} />
-          </button>
-        </div>
-      )}
 
       <div className="launchpad-body">
         {recentRepos.length === 0 && categories.length === 0 ? (

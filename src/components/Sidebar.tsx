@@ -5,7 +5,6 @@ import {
   GitMerge, Edit2, X, RefreshCw, Link, Upload, Download, Shuffle
 } from "lucide-react";
 import type { BranchInfo, RepoSummary, TagInfo, StashInfo, RemoteInfo, BranchAheadBehind } from "../types";
-import type { Tab } from "../App";
 import * as api from "../api";
 import { useToast } from "../toast";
 import { loadAccounts } from "../github-accounts";
@@ -14,8 +13,6 @@ interface Props {
   branches: BranchInfo[];
   tags: TagInfo[];
   repoPath: string;
-  activeTab: Tab;
-  onTabChange: (tab: Tab) => void;
   onCheckout: (branch: string) => void;
   onMerge: (branch: string) => void;
   onRename: (oldName: string, newName: string) => void;
@@ -24,7 +21,7 @@ interface Props {
   categoryAccountId?: string | null;
 }
 export default function Sidebar({
-  branches, tags, repoPath, activeTab, onTabChange, onCheckout, onMerge, onRename, onRefresh, repoSummary, categoryAccountId
+  branches, tags, repoPath, onCheckout, onMerge, onRename, onRefresh, repoSummary, categoryAccountId
 }: Props) {
   const [localOpen, setLocalOpen] = useState(true);
   const [tagsOpen, setTagsOpen] = useState(false);
@@ -253,23 +250,6 @@ export default function Sidebar({
 
   return (
     <div className="sidebar">
-      <div className="sidebar-tabs">
-        <button
-          className={`sidebar-tab ${activeTab === "graph" ? "active" : ""}`}
-          onClick={() => onTabChange("graph")}
-        >
-          <GitCommit size={14} />
-          Graph
-        </button>
-        <button
-          className={`sidebar-tab ${activeTab === "working" ? "active" : ""}`}
-          onClick={() => onTabChange("working")}
-        >
-          <Package size={14} />
-          Changes
-        </button>
-      </div>
-
       <div className="sidebar-section">
         <div className="section-header">
           <span className="section-title">Repository</span>

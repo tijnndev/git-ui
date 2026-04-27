@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3, Terminal } from "lucide-react";
-import type { FileStatus, FileDiff } from "../types";
+import type { FileStatus } from "../types";
 import * as api from "../api";
-import DiffViewer from "./DiffViewer";
 import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
 import { useToast } from "../toast";
 
@@ -11,12 +10,13 @@ interface Props {
   status: FileStatus[];
   onRefresh: () => void;
   categoryAccountId?: string | null;
+  selectedFile?: string | null;
+  selectedStaged?: boolean;
+  onSelectFile?: (path: string, staged: boolean) => void;
+  width?: number;
 }
 
-export default function WorkingDirectory({ repoPath, status, onRefresh, categoryAccountId }: Props) {
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [selectedStaged, setSelectedStaged] = useState(false);
-  const [diff, setDiff] = useState<FileDiff | null>(null);
+export default function WorkingDirectory({ repoPath, status, onRefresh, categoryAccountId, selectedFile, selectedStaged, onSelectFile, width }: Props) {
   const [commitMsg, setCommitMsg] = useState("");
   const [committing, setCommitting] = useState(false);
   const [amend, setAmend] = useState(false);
@@ -28,20 +28,8 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   const unstaged = status.filter((f) => !f.staged);
 
   useEffect(() => {
-    setSelectedFile(null);
-    setDiff(null);
+    // nothing to clear when repo changes – parent manages selection
   }, [repoPath]);
-
-  const loadDiff = async (filePath: string, staged: boolean) => {
-    setSelectedFile(filePath);
-    setSelectedStaged(staged);
-    try {
-      const diffs = await api.getDiff(repoPath, undefined, staged);
-      setDiff(diffs.find((d) => d.path === filePath) ?? null);
-    } catch (e) {
-      console.error(e);
-    }
-  };
 
   const handleStage = async (filePath: string) => {
     await api.stageFile(repoPath, filePath);
@@ -154,19 +142,8 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   };
 
   return (
-    <div className="working-directory">
-      <div className="wd-left">
-        {diff ? (
-          <DiffViewer diff={diff} />
-        ) : (
-          <div className="empty-state">
-            <RotateCcw size={32} />
-            <p>Select a file to view changes</p>
-          </div>
-        )}
-      </div>
-
-      <div className="wd-right">
+    <div className="changes-sidebar" style={width !== undefined ? { width } : undefined}>
+      <div className="wd-file-sections">
         <div className="wd-section">
           <div className="wd-section-header">
             <span>Staged Changes ({staged.length})</span>
@@ -182,7 +159,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
             <div
               key={f.path}
               className={`file-item ${selectedFile === f.path && selectedStaged ? "selected" : ""}`}
-              onClick={() => loadDiff(f.path, true)}
+              onClick={() => onSelectFile?.(f.path, true)}
             >
               <span className={`status-badge status-${f.status}`}>{f.status[0].toUpperCase()}</span>
               <span className="file-path">{f.path}</span>
@@ -213,7 +190,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
             <div
               key={f.path}
               className={`file-item ${selectedFile === f.path && !selectedStaged ? "selected" : ""}`}
-              onClick={() => loadDiff(f.path, false)}
+              onClick={() => onSelectFile?.(f.path, false)}
             >
               <span className={`status-badge status-${f.status}`}>{f.status[0].toUpperCase()}</span>
               <span className="file-path">{f.path}</span>
@@ -228,8 +205,9 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
             </div>
           ))}
         </div>
+      </div>
 
-        <div className="commit-form">
+      <div className="commit-form">
           <textarea
             className="commit-input"
             placeholder="Commit message..."
@@ -273,7 +251,6 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
             {pushing ? "Pushing..." : "Push to remote"}
           </button>
         </div>
-      </div>
     </div>
   );
 }

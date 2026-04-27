@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import TitleBar from "./components/TitleBar";
@@ -10,15 +10,14 @@ import WelcomeScreen from "./components/WelcomeScreen";
 import ResizableSplit from "./components/ResizableSplit";
 import SettingsPage from "./components/SettingsPage";
 import FileHistory from "./components/FileHistory";
-import type { CommitInfo, BranchInfo, FileStatus, RepoSummary, RecentRepo, TagInfo, RepoCategory } from "./types";
+import DiffViewer from "./components/DiffViewer";
+import type { CommitInfo, BranchInfo, FileStatus, RepoSummary, RecentRepo, TagInfo, RepoCategory, FileDiff } from "./types";
 import type { AppSettings } from "./settings";
 import { loadSettings, saveSettings, DEFAULT_SETTINGS, applySettings } from "./settings";
 import { storeGet, storeSet } from "./store";
 import { nanoid } from "./nanoid";
 import * as api from "./api";
 import { useToast } from "./toast";
-
-export type Tab = "graph" | "working";
 
 function repoName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -44,9 +43,8 @@ export default function App() {
   const [branches, setBranches] = useState<BranchInfo[]>([]);
   const [status, setStatus] = useState<FileStatus[]>([]);
   const [selectedCommit, setSelectedCommit] = useState<CommitInfo | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("graph");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadIdRef = useRef(0);
   const [recentRepos, setRecentRepos] = useState<RecentRepo[]>([]);
   const [tags, setTags] = useState<TagInfo[]>([]);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -54,6 +52,43 @@ export default function App() {
   const [pulling, setPulling] = useState(false);
   const [fileHistoryPath, setFileHistoryPath] = useState<string | null>(null);
   const [categories, setCategories] = useState<RepoCategory[]>([]);
+  const [changesFile, setChangesFile] = useState<string | null>(null);
+  const [changesStaged, setChangesStaged] = useState(false);
+  const [changesDiff, setChangesDiff] = useState<FileDiff | null>(null);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(280);
+  const rightDragging = useRef(false);
+  const rightDragStartX = useRef(0);
+  const rightDragStartW = useRef(0);
+
+  const onRightHandleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    rightDragging.current = true;
+    rightDragStartX.current = e.clientX;
+    rightDragStartW.current = rightPanelWidth;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [rightPanelWidth]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!rightDragging.current) return;
+      const delta = rightDragStartX.current - e.clientX;
+      setRightPanelWidth(Math.max(180, Math.min(520, rightDragStartW.current + delta)));
+    };
+    const onMouseUp = () => {
+      if (!rightDragging.current) return;
+      rightDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, []);
 
   // Load persisted data from store on first render
   useEffect(() => {
@@ -94,48 +129,57 @@ export default function App() {
     saveRecentRepos(recentRepos.map((r) => (set.has(r.path) ? { ...r, categoryId } : r)));
   }, [recentRepos, saveRecentRepos]);
 
-  // resetTab=true when opening a new repo, false when just refreshing
-  const loadRepo = useCallback(async (path: string, resetTab = true) => {
-    setLoading(true);
+  const loadRepo = useCallback(async (path: string) => {
+    const loadId = ++loadIdRef.current;
+    // Show the repo page instantly — clear stale data synchronously so
+    // React renders the skeleton UI in the same tick, before any await.
+    setRepoPath(path);
+    setRepoSummary(null);
+    setCommits([]);
+    setBranches([]);
+    setTags([]);
+    setStatus([]);
+    setSelectedCommit(null);
+    setChangesFile(null);
+    setChangesDiff(null);
     setError(null);
+
+    const existing = recentRepos.find((r) => r.path === path);
+    const entry: RecentRepo = {
+      path,
+      name: repoName(path),
+      lastOpened: Date.now(),
+      pinned: existing?.pinned ?? false,
+      categoryId: existing?.categoryId ?? null,
+    };
+    saveRecentRepos([entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 50));
+
     try {
-      const [summary, allCommits, allBranches, fileStatus, allTags] = await Promise.all([
+      const [summary, fileStatus, allBranches, allTags] = await Promise.all([
         api.getRepoSummary(path),
-        api.getAllCommits(path, 500),
-        api.getBranches(path),
         api.getStatus(path),
+        api.getBranches(path),
         api.getTags(path),
       ]);
-      setRepoPath(path);
+      if (loadId !== loadIdRef.current) return;
       setRepoSummary(summary);
-      setCommits(allCommits);
-      setBranches(allBranches);
       setStatus(fileStatus);
+      setBranches(allBranches);
       setTags(allTags);
-      setSelectedCommit(null);
-      if (resetTab) setActiveTab("graph");
 
-      const existing = recentRepos.find((r) => r.path === path);
-      const entry: RecentRepo = {
-        path,
-        name: repoName(path),
-        lastOpened: Date.now(),
-        pinned: existing?.pinned ?? false,
-        categoryId: existing?.categoryId ?? null,
-      };
-      const updated = [entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 50);
-      saveRecentRepos(updated);
+      const allCommits = await api.getAllCommits(path, 500);
+      if (loadId !== loadIdRef.current) return;
+      setCommits(allCommits);
     } catch (e) {
+      if (loadId !== loadIdRef.current) return;
       setError(String(e));
-    } finally {
-      setLoading(false);
     }
   }, [recentRepos, saveRecentRepos]);
 
   const openRepo = useCallback(async () => {
     const selected = await open({ directory: true, multiple: false });
     if (selected && typeof selected === "string") {
-      loadRepo(selected, true);
+      loadRepo(selected);
     }
   }, [loadRepo]);
 
@@ -153,10 +197,10 @@ export default function App() {
     saveRecentRepos(updated.slice(0, 50));
   }, [recentRepos, saveRecentRepos]);
 
-  // refresh never resets the active tab
+  // refresh never resets anything
   const refresh = useCallback(async () => {
     if (!repoPath) return;
-    loadRepo(repoPath, false);
+    loadRepo(repoPath);
   }, [repoPath, loadRepo]);
 
   const goHome = useCallback(() => {
@@ -167,8 +211,26 @@ export default function App() {
     setStatus([]);
     setTags([]);
     setSelectedCommit(null);
+    setChangesFile(null);
+    setChangesDiff(null);
     setError(null);
   }, []);
+
+  const handleSelectChangesFile = useCallback(async (filePath: string, staged: boolean) => {
+    if (!repoPath) return;
+    setChangesFile(filePath);
+    setChangesStaged(staged);
+    setDiffLoading(true);
+    setChangesDiff(null);
+    try {
+      const diffs = await api.getDiff(repoPath, undefined, staged);
+      setChangesDiff(diffs.find((d) => d.path === filePath) ?? null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setDiffLoading(false);
+    }
+  }, [repoPath]);
 
   const handlePull = useCallback(async () => {
     if (!repoPath || pulling) return;
@@ -216,7 +278,7 @@ export default function App() {
           onOpenMultiple={openMultipleRepos}
           recentRepos={recentRepos}
           categories={categories}
-          onSelectRecent={(path) => loadRepo(path, true)}
+          onSelectRecent={(path) => loadRepo(path)}
           onPinToggle={togglePin}
           onRemove={removeRecent}
           onCreateCategory={handleCreateCategory}
@@ -263,8 +325,6 @@ export default function App() {
           branches={branches}
           tags={tags}
           repoPath={repoPath}
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
           onCheckout={async (branch) => {
             await api.checkoutBranch(repoPath, branch);
             refresh();
@@ -294,33 +354,36 @@ export default function App() {
           }
         />
         <div className="content-area">
-          {loading ? (
-            <div className="loading-overlay">
-              <div className="spinner" />
-              <span>Loading repository...</span>
-            </div>
-          ) : activeTab === "working" ? (
-            <WorkingDirectory
-              repoPath={repoPath}
-              status={status}
-              onRefresh={refresh}
-              categoryAccountId={
-                categories.find(
-                  (c) => c.id === recentRepos.find((r) => r.path === repoPath)?.categoryId
-                )?.accountId ?? null
-              }
-            />
-          ) : (
-            <ResizableSplit
+          <ResizableSplit
               top={
-                <CommitGraph
-                  commits={commits}
-                  branches={branches}
-                  tags={tags}
-                  selectedCommit={selectedCommit}
-                  onSelectCommit={setSelectedCommit}
-                  settings={settings}
-                />
+                changesDiff || diffLoading ? (
+                  <div className="diff-main-area">
+                    <div className="diff-back-bar">
+                      <button className="diff-back-btn" onClick={() => { setChangesFile(null); setChangesDiff(null); }} title="Back to graph">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                      </button>
+                      <span className="diff-back-path">{changesFile}</span>
+                    </div>
+                    {diffLoading ? (
+                      <div className="loading-overlay"><div className="spinner" /></div>
+                    ) : changesDiff ? (
+                      <div className="diff-panel" style={{ flex: 1, overflow: "auto" }}>
+                        <DiffViewer diff={changesDiff} />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <CommitGraph
+                    commits={commits}
+                    branches={branches}
+                    tags={tags}
+                    selectedCommit={selectedCommit}
+                    onSelectCommit={setSelectedCommit}
+                    settings={settings}
+                  />
+                )
               }
               bottom={
                 selectedCommit ? (
@@ -338,8 +401,27 @@ export default function App() {
                 )
               }
             />
-          )}
+          </div>
+        <div
+          className="resizable-handle-v"
+          onMouseDown={onRightHandleMouseDown}
+        >
+          <div className="resizable-handle-grip-v" />
         </div>
+        <WorkingDirectory
+          repoPath={repoPath}
+          status={status}
+          onRefresh={refresh}
+          categoryAccountId={
+            categories.find(
+              (c) => c.id === recentRepos.find((r) => r.path === repoPath)?.categoryId
+            )?.accountId ?? null
+          }
+          selectedFile={changesFile}
+          selectedStaged={changesStaged}
+          onSelectFile={handleSelectChangesFile}
+          width={rightPanelWidth}
+        />
       </div>
       {showSettings && (
         <SettingsPage
@@ -353,7 +435,7 @@ export default function App() {
           repoPath={repoPath}
           filePath={fileHistoryPath}
           onClose={() => setFileHistoryPath(null)}
-          onSelectCommit={(c) => { setSelectedCommit(c); setFileHistoryPath(null); setActiveTab("graph"); }}
+          onSelectCommit={(c) => { setSelectedCommit(c); setFileHistoryPath(null); }}
         />
       )}
     </div>

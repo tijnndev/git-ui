@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect, useCallback, useState } from "react";
+import { useMemo, useRef, useEffect, useCallback, useState, useDeferredValue } from "react";
 import type { CommitInfo, BranchInfo, TagInfo } from "../types";
 import type { AppSettings } from "../settings";
 
@@ -18,9 +18,11 @@ interface LaneCommit {
 }
 
 interface GraphEdge {
-  fromLane: number;
-  toLane: number;
-  row: number; // edge spans from center of `row` to center of `row + 1`
+  fromRow: number;  // child commit row
+  toRow: number;    // parent commit row
+  fromLane: number; // lane at child
+  toLane: number;   // lane at parent
+  wireLane: number; // lane for intermediate wire (same as fromLane for straight wires)
 }
 
 const LANE_COLORS = [
@@ -52,51 +54,64 @@ function computeGraph(commits: CommitInfo[]): { nodes: LaneCommit[]; edges: Grap
   const nodes: LaneCommit[] = [];
   const edges: GraphEdge[] = [];
 
-  // activeLanes[i] = oid this lane is traveling toward (null = free)
-  const activeLanes: (string | null)[] = [];
-  // wireLane per (commitOid, parentIndex): the lane the wire travels on
-  const commitWireLanes = new Map<string, number[]>();
+  // O(1) lane lookup: oid → array of lane indices traveling toward it
+  const oidToLanes = new Map<string, number[]>();
+  const freeLanes: number[] = []; // sorted ascending pool
+  let laneCount = 0;
 
-  const allocLane = (oid: string): number => {
-    let l = activeLanes.findIndex(o => o === oid);
-    if (l !== -1) return l;
-    l = activeLanes.findIndex(o => o === null);
-    if (l === -1) { l = activeLanes.length; activeLanes.push(null); }
-    activeLanes[l] = oid;
-    return l;
+  const allocFreeLane = (): number =>
+    freeLanes.length > 0 ? freeLanes.shift()! : laneCount++;
+
+  const claimLane = (oid: string, lane: number) => {
+    const arr = oidToLanes.get(oid);
+    if (arr) arr.push(lane);
+    else oidToLanes.set(oid, [lane]);
   };
 
-  // Pass 1: assign lanes
+  const commitWireLanes = new Map<string, number[]>();
+
+  // Pass 1: assign lanes (O(n) with Map-based lookups)
   commits.forEach((commit) => {
-    let lane = activeLanes.findIndex(o => o === commit.oid);
-    if (lane === -1) {
-      lane = activeLanes.findIndex(o => o === null);
-      if (lane === -1) { lane = activeLanes.length; activeLanes.push(null); }
+    const myLanes = oidToLanes.get(commit.oid);
+    const lane = myLanes && myLanes.length > 0 ? myLanes[0] : allocFreeLane();
+
+    // Free extra lanes pointing to this commit (multi-parent convergence)
+    if (myLanes) {
+      for (let i = 1; i < myLanes.length; i++) freeLanes.push(myLanes[i]);
+      if (freeLanes.length > 1) freeLanes.sort((a, b) => a - b);
+      oidToLanes.delete(commit.oid);
     }
 
-    // Free ALL lanes pointing to this commit (handles multi-parent convergence)
-    for (let i = 0; i < activeLanes.length; i++) {
-      if (activeLanes[i] === commit.oid) activeLanes[i] = null;
-    }
-
+    let laneConsumed = false;
     const parentWireLanes: number[] = [];
     commit.parents.forEach((parentOid, i) => {
       if (!oidToRow.has(parentOid)) { parentWireLanes.push(-1); return; }
       if (i === 0) {
-        activeLanes[lane] = parentOid;
-        parentWireLanes.push(lane); // first parent: wire stays on this lane
+        claimLane(parentOid, lane);
+        parentWireLanes.push(lane);
+        laneConsumed = true;
       } else {
-        const ml = allocLane(parentOid);
-        parentWireLanes.push(ml); // merge parent: gets its own dedicated lane
+        const existing = oidToLanes.get(parentOid);
+        if (existing && existing.length > 0) {
+          parentWireLanes.push(existing[0]);
+        } else {
+          const ml = allocFreeLane();
+          claimLane(parentOid, ml);
+          parentWireLanes.push(ml);
+        }
       }
     });
-    commitWireLanes.set(commit.oid, parentWireLanes);
 
-    const maxLane = activeLanes.reduce((m, v, i) => v !== null ? Math.max(m, i) : m, lane);
-    nodes.push({ commit, lane, totalLanes: maxLane + 1 });
+    if (!laneConsumed) {
+      freeLanes.push(lane);
+      freeLanes.sort((a, b) => a - b);
+    }
+
+    commitWireLanes.set(commit.oid, parentWireLanes);
+    nodes.push({ commit, lane, totalLanes: Math.max(laneCount - freeLanes.length, lane + 1) });
   });
 
-  // Pass 2: generate per-row edge segments
+  // Pass 2: one range-based edge per parent connection (O(n) total edges)
   nodes.forEach(({ commit, lane: LC }, RC) => {
     const pWireLanes = commitWireLanes.get(commit.oid) ?? [];
     commit.parents.forEach((parentOid, idx) => {
@@ -105,20 +120,7 @@ function computeGraph(commits: CommitInfo[]): { nodes: LaneCommit[]; edges: Grap
       const LP = nodes[RP].lane;
       const WL = pWireLanes[idx];
       if (WL === undefined || WL === -1) return;
-
-      if (RP === RC + 1) {
-        // Adjacent rows: single segment straight from LC to LP
-        edges.push({ fromLane: LC, toLane: LP, row: RC });
-      } else {
-        // First segment: LC → WL  (fork if WL != LC, straight if same)
-        edges.push({ fromLane: LC, toLane: WL, row: RC });
-        // Middle segments: straight on WL
-        for (let r = RC + 1; r < RP - 1; r++) {
-          edges.push({ fromLane: WL, toLane: WL, row: r });
-        }
-        // Last segment: WL → LP  (converge if WL != LP, straight if same)
-        edges.push({ fromLane: WL, toLane: LP, row: RP - 1 });
-      }
+      edges.push({ fromRow: RC, toRow: RP, fromLane: LC, toLane: LP, wireLane: WL });
     });
   });
 
@@ -128,60 +130,72 @@ function computeGraph(commits: CommitInfo[]): { nodes: LaneCommit[]; edges: Grap
 export default function CommitGraph({ commits, branches, tags, selectedCommit, onSelectCommit, settings }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
+
+  // Deferred so computeGraph runs in an interruptible background render.
+  // flushSync (triggered by clicking a new repo) will abandon this render
+  // immediately, letting the loading overlay appear without waiting.
+  const deferredCommits = useDeferredValue(commits);
+  const deferredBranches = useDeferredValue(branches);
+  const deferredTags = useDeferredValue(tags);
 
   const ROW_H = settings.graphRowHeight;
   const LANE_W = settings.graphLaneWidth;
 
   const filteredCommits = useMemo(() => {
-    if (!search.trim()) return commits;
+    if (!search.trim()) return deferredCommits;
     const q = search.toLowerCase();
-    return commits.filter(
+    return deferredCommits.filter(
       (c) =>
         c.message.toLowerCase().includes(q) ||
         c.author_name.toLowerCase().includes(q) ||
         c.short_oid.toLowerCase().includes(q),
     );
-  }, [commits, search]);
+  }, [deferredCommits, search]);
 
   const graphData = useMemo(() => computeGraph(filteredCommits), [filteredCommits]);
 
   const branchMap = useMemo(() => {
     const m = new Map<string, BranchInfo[]>();
-    branches.forEach((b) => {
+    deferredBranches.forEach((b) => {
       const existing = m.get(b.tip_oid) ?? [];
       existing.push(b);
       m.set(b.tip_oid, existing);
     });
     return m;
-  }, [branches]);
+  }, [deferredBranches]);
 
   const tagMap = useMemo(() => {
     const m = new Map<string, TagInfo[]>();
-    tags.forEach((t) => {
+    deferredTags.forEach((t) => {
       const existing = m.get(t.oid) ?? [];
       existing.push(t);
       m.set(t.oid, existing);
     });
     return m;
-  }, [tags]);
+  }, [deferredTags]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
     const dpr = window.devicePixelRatio || 1;
+    const scrollEl = scrollRef.current;
+    const scrollTop = scrollEl?.scrollTop ?? 0;
+    const viewH = scrollEl?.clientHeight ?? 0;
     const width = container.clientWidth;
-    if (width <= 0) return;
-    const height = graphData.nodes.length * ROW_H;
+    if (width <= 0 || viewH <= 0) return;
+    const firstRow = Math.max(0, Math.floor(scrollTop / ROW_H) - 1);
+    const lastRow = Math.min(graphData.nodes.length - 1, Math.ceil((scrollTop + viewH) / ROW_H) + 2);
     canvas.width = width * dpr;
-    canvas.height = height * dpr;
+    canvas.height = viewH * dpr;
     canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.style.height = `${viewH}px`;
 
     const ctx = canvas.getContext("2d")!;
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, width, viewH);
     ctx.textBaseline = "middle";
 
     const maxLanesVal = Math.max(...graphData.nodes.map(n => n.lane + 1), 1);
@@ -202,25 +216,47 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
       ctx.closePath();
     }
 
-    // Draw all edge segments
-    graphData.edges.forEach(({ fromLane, toLane, row }) => {
-      const x1 = LEFT_PADDING + fromLane * LANE_W;
-      const y1 = row * ROW_H + ROW_H / 2;
-      const x2 = LEFT_PADDING + toLane * LANE_W;
-      const y2 = (row + 1) * ROW_H + ROW_H / 2;
-      const color = LANE_COLORS[Math.max(fromLane, toLane) % LANE_COLORS.length];
+    // Draw edges (range-based: one object per parent connection)
+    graphData.edges.forEach(({ fromRow, toRow, fromLane: LC, toLane: LP, wireLane: WL }) => {
+      // Cull edges entirely outside the visible range
+      if (fromRow > lastRow || toRow - 1 < firstRow) return;
 
-      ctx.beginPath();
+      const color = LANE_COLORS[Math.max(WL, LC) % LANE_COLORS.length];
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      if (fromLane === toLane) {
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y2);
+
+      const drawSeg = (fl: number, tl: number, r: number) => {
+        const x1 = LEFT_PADDING + fl * LANE_W;
+        const y1 = r * ROW_H + ROW_H / 2 - scrollTop;
+        const x2 = LEFT_PADDING + tl * LANE_W;
+        const y2 = (r + 1) * ROW_H + ROW_H / 2 - scrollTop;
+        ctx.beginPath();
+        if (fl === tl) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
+        else { ctx.moveTo(x1, y1); ctx.bezierCurveTo(x1, y1 + ROW_H * 0.5, x2, y2 - ROW_H * 0.5, x2, y2); }
+        ctx.stroke();
+      };
+
+      if (toRow === fromRow + 1) {
+        // Adjacent rows: single segment
+        if (fromRow >= firstRow) drawSeg(LC, LP, fromRow);
       } else {
-        ctx.moveTo(x1, y1);
-        ctx.bezierCurveTo(x1, y1 + ROW_H * 0.5, x2, y2 - ROW_H * 0.5, x2, y2);
+        // First segment: LC → WL
+        if (fromRow >= firstRow && fromRow <= lastRow) drawSeg(LC, WL, fromRow);
+
+        // Middle segments: straight wire on WL — draw as one continuous line
+        const midStart = Math.max(fromRow + 1, firstRow);
+        const midEnd = Math.min(toRow - 2, lastRow);
+        if (midStart <= midEnd) {
+          const x = LEFT_PADDING + WL * LANE_W;
+          const y1 = midStart * ROW_H + ROW_H / 2 - scrollTop;
+          const y2 = (midEnd + 1) * ROW_H + ROW_H / 2 - scrollTop;
+          ctx.beginPath(); ctx.moveTo(x, y1); ctx.lineTo(x, y2); ctx.stroke();
+        }
+
+        // Last segment: WL → LP
+        const lastSeg = toRow - 1;
+        if (lastSeg >= firstRow && lastSeg <= lastRow) drawSeg(WL, LP, lastSeg);
       }
-      ctx.stroke();
     });
 
     // Derive column widths from settings
@@ -234,15 +270,16 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
 
     // Draw dots + text
     graphData.nodes.forEach(({ commit, lane }, row) => {
+      if (row < firstRow || row > lastRow) return;
       const dotX = LEFT_PADDING + lane * LANE_W;
-      const cy = row * ROW_H + ROW_H / 2;
+      const cy = row * ROW_H + ROW_H / 2 - scrollTop;
       const color = LANE_COLORS[lane % LANE_COLORS.length];
       const isSelected = selectedCommit?.oid === commit.oid;
 
       // Row selection highlight
       if (isSelected) {
         ctx.fillStyle = "rgba(0, 146, 128, 0.12)";
-        ctx.fillRect(0, row * ROW_H, width, ROW_H);
+        ctx.fillRect(0, row * ROW_H - scrollTop, width, ROW_H);
       }
 
       // Dot
@@ -357,12 +394,23 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
 
   useEffect(() => { draw(); }, [draw]);
 
+  // Redraw on scroll
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => draw();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [draw]);
+
   // Redraw when container is resized (e.g. dragging the resizable split)
   useEffect(() => {
     const container = containerRef.current;
+    const scrollEl = scrollRef.current;
     if (!container) return;
     const ro = new ResizeObserver(() => draw());
     ro.observe(container);
+    if (scrollEl) ro.observe(scrollEl);
     return () => ro.disconnect();
   }, [draw]);
 
@@ -371,7 +419,8 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const row = Math.floor(y / ROW_H);
+    const scrollTop = scrollRef.current?.scrollTop ?? 0;
+    const row = Math.floor((y + scrollTop) / ROW_H);
     if (row >= 0 && row < graphData.nodes.length) {
       onSelectCommit(graphData.nodes[row].commit);
     }
@@ -399,15 +448,26 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
         {settings.showHashCol   && <span style={{ width: HASH_COL_W,   flexShrink: 0 }}>Hash</span>}
       </div>
 
-      <div className="commit-graph-scroll">
+      <div className="commit-graph-scroll" ref={scrollRef}>
+        {commits.length === 0 || deferredCommits.length === 0 ? (
+          <div className="graph-skeleton">
+            {Array.from({ length: 12 }, (_, i) => (
+              <div key={i} className="graph-skeleton-row">
+                <div className="graph-skeleton-dot" style={{ marginLeft: 16 + (i % 3) * 18 }} />
+                <div className="graph-skeleton-line" style={{ width: `${30 + ((i * 37) % 40)}%` }} />
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="commit-graph-inner" style={{ height: graphData.nodes.length * ROW_H }}>
           <canvas
             ref={canvasRef}
             className="graph-canvas"
-            style={{ width: "100%", display: "block" }}
+            style={{ width: "100%", display: "block", position: "sticky", top: 0 }}
             onClick={handleCanvasClick}
           />
         </div>
+        )}
       </div>
     </div>
   );
