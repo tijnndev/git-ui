@@ -33,6 +33,38 @@ fn resolve_remote_url(repo_path: &str, remote: &str) -> Result<String, String> {
     Ok(rem.url().unwrap_or("").to_string())
 }
 
+/// `https://user:pass@host/path` → `https://host/path` for comparing configured remotes.
+fn url_without_credentials(url: &str) -> String {
+    let Some(pos) = url.find("://") else {
+        return url.to_string();
+    };
+    let scheme = &url[..pos + 3];
+    let rest = &url[pos + 3..];
+    if let Some(at) = rest.find('@') {
+        format!("{}{}", scheme, &rest[at + 1..])
+    } else {
+        url.to_string()
+    }
+}
+
+/// Find the remote name whose stored URL matches this authenticated URL (ignoring credentials).
+fn remote_for_credential_override(repo_path: &str, auth_url: &str) -> Result<String, String> {
+    use git2::Repository;
+    let auth_norm = url_without_credentials(auth_url);
+    let repo = Repository::open(repo_path).map_err(|e| e.to_string())?;
+    let remotes = repo.remotes().map_err(|e| e.to_string())?;
+    for name in remotes.iter().flatten() {
+        if let Ok(r) = repo.find_remote(name) {
+            if let Some(u) = r.url() {
+                if url_without_credentials(u) == auth_norm {
+                    return Ok(name.to_string());
+                }
+            }
+        }
+    }
+    Ok("origin".to_string())
+}
+
 #[command]
 pub fn get_repo_summary(repo_path: String) -> Result<RepoSummary, String> {
     git_ops::get_repo_summary(&repo_path)
@@ -183,14 +215,33 @@ pub fn get_remote_url(repo_path: String, remote: String) -> Result<String, Strin
 
 #[command]
 pub fn git_pull(repo_path: String, remote: Option<String>) -> Result<String, String> {
-    let remote_name = remote.unwrap_or_else(|| "origin".to_string());
+    let arg = remote.unwrap_or_else(|| "origin".to_string());
 
     let mut cmd = git_cmd();
-    // Bypass Windows Git Credential Manager so embedded credentials in the URL are used.
-    if remote_name.contains('@') {
+
+    // `git pull https://user:token@host/repo.git` treats the URL as a one-off remote and
+    // typically merges that repo's default branch — not the current branch's upstream
+    // (branch.*.merge / @{u}). That feels like "pull main into my feature branch".
+    // Match GitKraken-style behavior: temporarily set remote.<name>.url to the auth URL,
+    // then run `git pull <name>` so the correct upstream is merged.
+    let is_https_with_userinfo = (arg.starts_with("http://") || arg.starts_with("https://"))
+        && arg
+            .find("://")
+            .map(|i| arg[i + 3..].contains('@'))
+            .unwrap_or(false);
+
+    if is_https_with_userinfo {
+        let logical = remote_for_credential_override(&repo_path, &arg)?;
         cmd.arg("-c").arg("credential.helper=");
+        cmd.arg("-c")
+            .arg(format!("remote.{}.url={}", logical, arg));
+        cmd.arg("pull").arg(&logical);
+    } else {
+        if arg.contains('@') {
+            cmd.arg("-c").arg("credential.helper=");
+        }
+        cmd.arg("pull").arg(&arg);
     }
-    cmd.args(["pull", &remote_name]);
 
     let output = cmd
         .current_dir(&repo_path)

@@ -1,13 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
-  GitBranch, GitCommit, Tag, Package, Cloud, ChevronDown,
-  ChevronRight, Plus, Trash2, Check, GitFork, Circle,
+  GitBranch, Tag, Package, Cloud, ChevronDown,
+  ChevronRight, Plus, Trash2, Check, Circle,
   GitMerge, Edit2, X, RefreshCw, Link, Upload, Download, Shuffle
 } from "lucide-react";
 import type { BranchInfo, RepoSummary, TagInfo, StashInfo, RemoteInfo, BranchAheadBehind } from "../types";
 import * as api from "../api";
 import { useToast } from "../toast";
-import { loadAccounts } from "../github-accounts";
+import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
+import { describePullTooltip } from "../pullTooltip";
 
 interface Props {
   branches: BranchInfo[];
@@ -28,6 +29,7 @@ export default function Sidebar({
   const [stashOpen, setStashOpen] = useState(false);
   const [showNewBranch, setShowNewBranch] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
+  const [newBranchBasedOn, setNewBranchBasedOn] = useState("");
   const [renamingBranch, setRenamingBranch] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [stashes, setStashes] = useState<StashInfo[]>([]);
@@ -45,6 +47,7 @@ export default function Sidebar({
   const [aheadBehind, setAheadBehind] = useState<Map<string, { ahead: number; behind: number }>>(new Map());
   const [pushingTag, setPushingTag] = useState<string | null>(null);
   const [deletingRemoteBranch, setDeletingRemoteBranch] = useState<string | null>(null);
+  const [checkoutPending, setCheckoutPending] = useState<string | null>(null);
   const toast = useToast();
 
   const loadRemotes = () => {
@@ -62,6 +65,73 @@ export default function Sidebar({
   const localBranches = branches.filter((b) => !b.is_remote);
   const remoteBranches = branches.filter((b) => b.is_remote);
 
+  const headBranchName = repoSummary?.head_branch ?? null;
+  // Prefer summary (true HEAD symref); avoid localBranches.find(is_head) alone — multiple
+  // branches can share HEAD's commit and the first match was often wrong (e.g. main).
+  const currentLocalBranchName =
+    headBranchName && !headBranchName.startsWith("HEAD detached")
+      ? headBranchName
+      : localBranches.find((b) => b.is_head)?.name ?? "";
+
+  const sortedLocalBranches = useMemo(
+    () =>
+      [...localBranches].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      ),
+    [localBranches],
+  );
+
+  const sortedRemoteBranches = useMemo(
+    () =>
+      [...remoteBranches].sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      ),
+    [remoteBranches],
+  );
+
+  /** Remotes shown in branch picker: drop symbolic refs like origin/HEAD and branches already present as locals. */
+  const remotesForBranchPicker = useMemo(() => {
+    const localNames = new Set(localBranches.map((b) => b.name));
+    return sortedRemoteBranches.filter((r) => {
+      if (r.name.endsWith("/HEAD")) return false;
+      const i = r.name.indexOf("/");
+      if (i === -1) return true;
+      const tail = r.name.slice(i + 1);
+      if (localNames.has(tail)) return false;
+      return true;
+    });
+  }, [sortedRemoteBranches, localBranches]);
+
+  const allBranchesForBase = useMemo(
+    () => [...sortedLocalBranches, ...remotesForBranchPicker],
+    [sortedLocalBranches, remotesForBranchPicker],
+  );
+
+  const hasBranchChoices =
+    sortedLocalBranches.length + remotesForBranchPicker.length > 0;
+
+  const handleBranchSelect = async (value: string) => {
+    if (!value || checkoutPending) return;
+    if (value === currentLocalBranchName) return;
+    const isRemote = remoteBranches.some((r) => r.name === value);
+    setCheckoutPending(value);
+    try {
+      if (isRemote) {
+        await api.checkoutRemoteBranch(repoPath, value);
+        onRefresh();
+      } else {
+        await onCheckout(value);
+      }
+    } catch (e) {
+      if (isRemote) {
+        toast.error(String(e), 0);
+      }
+      // local: App sets error banner via onCheckout throw
+    } finally {
+      setCheckoutPending(null);
+    }
+  };
+
   useEffect(() => {
     if (!repoPath) return;
     api.getStashes(repoPath).then(setStashes).catch(() => setStashes([]));
@@ -69,15 +139,22 @@ export default function Sidebar({
     loadAheadBehind();
   }, [repoPath]);
 
-  const handleCreateBranch = async () => {
-    if (!newBranchName.trim()) return;
+  const submitNewBranch = async () => {
+    const name = newBranchName.trim();
+    if (!name) return;
+    if (!allBranchesForBase.length) {
+      toast.error("Fetch the repository to load branches first.", 0);
+      return;
+    }
+    const base = allBranchesForBase.find((b) => b.name === newBranchBasedOn);
     try {
-      await api.createBranch(repoPath, newBranchName.trim());
+      await api.createBranch(repoPath, name, base?.tip_oid);
       setNewBranchName("");
       setShowNewBranch(false);
+      await onCheckout(name);
       onRefresh();
     } catch (e) {
-      alert(String(e));
+      toast.error(String(e), 0);
     }
   };
 
@@ -190,7 +267,30 @@ export default function Sidebar({
     e.stopPropagation();
     setPulling(true);
     try {
-      const msg = await api.gitPull(repoPath);
+      let remoteArg: string | undefined;
+      try {
+        const remoteUrl = await api.getRemoteUrl(repoPath, "origin");
+        const accounts = await loadAccounts();
+        const account =
+          (categoryAccountId ? accounts.find((a) => a.id === categoryAccountId) : null)
+          ?? findAccountForUrl(remoteUrl, accounts);
+
+        if (categoryAccountId && !account) {
+          toast.error(
+            "No GitHub account found for this category. Go to Settings → GitHub Accounts and re-add your account.",
+            0,
+          );
+          return;
+        }
+
+        if (account) {
+          remoteArg = injectToken(remoteUrl, account);
+        }
+      } catch {
+        // No remote configured – fall back to plain pull
+      }
+
+      const msg = await api.gitPull(repoPath, remoteArg);
       toast.success(msg?.trim() || "Already up to date");
       onRefresh();
     } catch (ex) { toast.error(String(ex), 0); }
@@ -249,23 +349,144 @@ export default function Sidebar({
   };
 
   return (
+    <>
     <div className="sidebar">
       <div className="sidebar-section">
         <div className="section-header">
           <span className="section-title">Repository</span>
           <button
             className={`icon-btn${pulling ? " spin-btn" : ""}`}
-            title="Pull current branch"
+            title={describePullTooltip(repoSummary?.head_branch ?? null, branches)}
             onClick={handlePull}
           >
             <Download size={12} className={pulling ? "spin" : ""} />
           </button>
         </div>
-        <div className="repo-info">
-          <div className="repo-head">
-            <GitFork size={12} />
-            <span>{repoSummary?.head_branch ?? "HEAD detached"}</span>
+        <div className="repo-info repo-branch-toolbar">
+          <div className="branch-select-row">
+            <GitBranch size={14} className="branch-select-icon" aria-hidden />
+            <select
+              className="branch-select"
+              aria-label="Current branch"
+              value={currentLocalBranchName}
+              disabled={!!checkoutPending || !hasBranchChoices}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) void handleBranchSelect(v);
+              }}
+            >
+              {!currentLocalBranchName && hasBranchChoices && (
+                <option value="" disabled>
+                  Detached HEAD — select branch
+                </option>
+              )}
+              {!hasBranchChoices && (
+                <option value="">(no branches — fetch remotes)</option>
+              )}
+              {sortedLocalBranches.length > 0 && (
+                <optgroup label="Local">
+                  {sortedLocalBranches.map((b) => (
+                    <option key={`local:${b.name}`} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {remotesForBranchPicker.length > 0 && (
+                <optgroup label="Remote">
+                  {remotesForBranchPicker.map((b) => (
+                    <option key={`remote:${b.name}`} value={b.name}>
+                      {b.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+            <button
+              type="button"
+              className="icon-btn branch-add-btn"
+              title="New branch…"
+              onClick={() => {
+                if (showNewBranch) {
+                  setShowNewBranch(false);
+                  return;
+                }
+                setNewBranchBasedOn(
+                  currentLocalBranchName ||
+                    sortedLocalBranches[0]?.name ||
+                    remotesForBranchPicker[0]?.name ||
+                    "",
+                );
+                setShowNewBranch(true);
+              }}
+            >
+              <Plus size={14} />
+            </button>
           </div>
+          {showNewBranch && (
+            <div className="new-branch-panel">
+              <input
+                className="new-branch-panel-input"
+                autoFocus
+                value={newBranchName}
+                onChange={(e) => setNewBranchName(e.target.value)}
+                placeholder="Name of new branch…"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void submitNewBranch();
+                  if (e.key === "Escape") {
+                    setShowNewBranch(false);
+                    setNewBranchName("");
+                  }
+                }}
+              />
+              <label className="new-branch-panel-label">
+                Based on
+                <select
+                  className="branch-select branch-select-inline"
+                  value={
+                    allBranchesForBase.some((b) => b.name === newBranchBasedOn)
+                      ? newBranchBasedOn
+                      : allBranchesForBase[0]?.name ?? ""
+                  }
+                  onChange={(e) => setNewBranchBasedOn(e.target.value)}
+                >
+                  {sortedLocalBranches.length > 0 && (
+                    <optgroup label="Local">
+                      {sortedLocalBranches.map((b) => (
+                        <option key={`nb:local:${b.name}`} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {remotesForBranchPicker.length > 0 && (
+                    <optgroup label="Remote">
+                      {remotesForBranchPicker.map((b) => (
+                        <option key={`nb:remote:${b.name}`} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+              <div className="new-branch-panel-actions">
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => {
+                    setShowNewBranch(false);
+                    setNewBranchName("");
+                  }}
+                >
+                  Cancel
+                </button>
+                <button type="button" className="btn-primary" onClick={() => void submitNewBranch()}>
+                  Create branch
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -279,33 +500,13 @@ export default function Sidebar({
           <GitBranch size={12} />
           <span className="section-title">Local Branches</span>
           <span className="badge">{localBranches.length}</span>
-          <button
-            className="icon-btn"
-            onClick={(e) => { e.stopPropagation(); setShowNewBranch(true); }}
-            title="New branch"
-          >
-            <Plus size={12} />
-          </button>
         </div>
 
-        {showNewBranch && (
-          <div className="new-branch-form">
-            <input
-              autoFocus
-              value={newBranchName}
-              onChange={(e) => setNewBranchName(e.target.value)}
-              placeholder="branch-name"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleCreateBranch();
-                if (e.key === "Escape") { setShowNewBranch(false); setNewBranchName(""); }
-              }}
-            />
-            <button onClick={handleCreateBranch}><Check size={12} /></button>
-          </div>
-        )}
-
         {localOpen && localBranches.map((b) => (
-          <div key={b.name} className={`branch-item ${b.is_head ? "active" : ""}`}>
+          <div
+            key={b.name}
+            className={`branch-item ${b.is_head ? "active" : ""}${checkoutPending === b.name ? " branch-item-checkout-pending" : ""}`}
+          >
             {renamingBranch === b.name ? (
               <div className="new-branch-form" style={{ flex: 1 }}>
                 <input
@@ -322,14 +523,19 @@ export default function Sidebar({
               </div>
             ) : (
               <>
-                {b.is_head && <span className="head-indicator"><Circle size={7} fill="currentColor" /></span>}
-                <span className="branch-name" onClick={() => !b.is_head && onCheckout(b.name)}>{b.name}</span>
-                {(() => { const ab = aheadBehind.get(b.name); return ab && (ab.ahead > 0 || ab.behind > 0) ? (
-                  <span className="branch-ab">
-                    {ab.ahead > 0 && <span title={`${ab.ahead} commit(s) ahead`}>↑{ab.ahead}</span>}
-                    {ab.behind > 0 && <span title={`${ab.behind} commit(s) behind`}>↓{ab.behind}</span>}
-                  </span>
-                ) : null; })()}
+                <span className="branch-item-label">
+                  {b.is_head && <span className="head-indicator"><Circle size={7} fill="currentColor" /></span>}
+                  <span className="branch-name">{b.name}</span>
+                  {checkoutPending === b.name && (
+                    <RefreshCw size={11} className="branch-checkout-spinner spin" aria-hidden />
+                  )}
+                  {(() => { const ab = aheadBehind.get(b.name); return ab && (ab.ahead > 0 || ab.behind > 0) ? (
+                    <span className="branch-ab">
+                      {ab.ahead > 0 && <span title={`${ab.ahead} commit(s) ahead`}>↑{ab.ahead}</span>}
+                      {ab.behind > 0 && <span title={`${ab.behind} commit(s) behind`}>↓{ab.behind}</span>}
+                    </span>
+                  ) : null; })()}
+                </span>
                 <button
                   className={`icon-btn${pushingBranch === b.name ? " spin-btn" : ""}`}
                   onClick={(e) => handlePushBranch(e, b.name)}
@@ -472,15 +678,15 @@ export default function Sidebar({
         ))}
 
         {/* Remote Branches (collapsed under Remotes) */}
-        {remoteOpen && remoteBranches.length > 0 && (
+        {remoteOpen && remotesForBranchPicker.length > 0 && (
           <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 4 }}>
-            {remoteBranches.map((b) => (
+            {remotesForBranchPicker.map((b) => (
               <div key={b.name} className="branch-item remote" style={{ paddingLeft: 20 }}>
                 <GitBranch size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
                 <span className="branch-name" style={{ flex: 1 }}>{b.name}</span>
                 <button
                   className="icon-btn"
-                  title={`Checkout ${b.name} as local branch`}
+                  title={`Create a local branch tracking ${b.name}`}
                   onClick={(e) => handleCheckoutRemote(e, b.name)}
                 >
                   <GitBranch size={10} />
@@ -622,5 +828,6 @@ export default function Sidebar({
         ))}
       </div>
     </div>
+    </>
   );
 }

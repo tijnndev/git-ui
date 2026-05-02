@@ -277,6 +277,111 @@ body {
   padding: 4px 10px;
 }
 
+.repo-branch-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branch-select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.branch-select-icon {
+  flex-shrink: 0;
+  opacity: 0.55;
+  color: var(--text-muted);
+}
+
+.branch-select {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.branch-select:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.branch-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.branch-select:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.branch-add-btn {
+  flex-shrink: 0;
+}
+
+.new-branch-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.new-branch-panel-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-0);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.new-branch-panel-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.new-branch-panel-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.branch-select-inline {
+  width: 100%;
+}
+
+.new-branch-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.branch-item-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .repo-head {
   display: flex;
   align-items: center;
@@ -284,6 +389,91 @@ body {
   color: var(--accent);
   font-size: 12px;
   font-weight: 500;
+}
+
+.repo-head-switch {
+  width: 100%;
+  margin: 0;
+  padding: 6px 2px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.1s;
+}
+
+.repo-head-switch:hover {
+  background: var(--bg-hover);
+}
+
+.repo-head-switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.repo-head-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-head-chevron {
+  flex-shrink: 0;
+  opacity: 0.45;
+}
+
+.branch-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+}
+
+.branch-item-main:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.branch-item-main:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.branch-item-main:disabled {
+  cursor: wait;
+  opacity: 0.85;
+}
+
+.branch-checkout-spinner {
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.branch-item-checkout-pending {
+  pointer-events: none;
+}
+
+.branch-item-checkout-pending .icon-btn {
+  pointer-events: none;
 }
 
 .branch-item {
@@ -862,6 +1052,97 @@ body {
   height: 480px;
   max-height: 90vh;
 }
+
+/* ── Branch switcher ─────────────────────────────────────── */
+
+.branch-switcher-modal {
+  width: 400px;
+  max-width: 95vw;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.branch-switcher-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.branch-switcher-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.branch-switcher-list {
+  overflow-y: auto;
+  max-height: 320px;
+}
+
+.branch-switcher-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  transition: background 0.1s;
+}
+
+.branch-switcher-item:hover,
+.branch-switcher-item.selected {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.branch-switcher-empty {
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.branch-switcher-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-switcher-item.is-current {
+  opacity: 0.92;
+}
+
+.branch-switcher-current-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.branch-switcher-footer {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
 
 .modal-header {
   display: flex;
@@ -1573,6 +1854,53 @@ body {
 .btn-secondary:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.btn-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--danger, #c0392b);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #a93226;
+}
+
+/* ── Confirm modal ───────────────────────────────────────── */
+
+.confirm-modal {
+  width: 360px;
+  max-width: 95vw;
+}
+
+.confirm-modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.confirm-modal-body p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .icon-btn {

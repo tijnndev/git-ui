@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { X } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import TitleBar from "./components/TitleBar";
@@ -19,6 +19,7 @@ import { nanoid } from "./nanoid";
 import * as api from "./api";
 import { loadAccounts, findAccountForUrl, injectToken } from "./github-accounts";
 import { useToast } from "./toast";
+import { describePullTooltip } from "./pullTooltip";
 
 function repoName(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
@@ -298,6 +299,33 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [refresh]);
 
+  // Auto-refresh unstaged changes every 3 seconds
+  const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (!repoPath) return;
+    autoRefreshRef.current = setInterval(async () => {
+      try {
+        const newStatus = await api.getStatus(repoPath);
+        setStatus((prev) => {
+          const prevKey = prev.map((f) => `${f.path}:${f.status}:${f.staged}`).sort().join("|");
+          const newKey = newStatus.map((f) => `${f.path}:${f.status}:${f.staged}`).sort().join("|");
+          if (prevKey !== newKey) return newStatus;
+          return prev;
+        });
+      } catch {
+        // ignore errors during polling
+      }
+    }, 3000);
+    return () => {
+      if (autoRefreshRef.current !== null) clearInterval(autoRefreshRef.current);
+    };
+  }, [repoPath]);
+
+  const pullTooltip = useMemo(
+    () => describePullTooltip(repoSummary?.head_branch ?? null, branches),
+    [repoSummary?.head_branch, branches],
+  );
+
   if (!repoPath) {
     return (
       <div className="app">
@@ -341,8 +369,11 @@ export default function App() {
         onOpenRepo={openRepo}
         onRefresh={refresh}
         onGoHome={goHome}
-        onOpenSettings={() => setShowSettings(true)}        onPull={handlePull}
-        pulling={pulling}      />
+        onOpenSettings={() => setShowSettings(true)}
+        onPull={handlePull}
+        pulling={pulling}
+        pullTooltip={pullTooltip}
+      />
       {error && (
         <div className="error-banner">
           <span>{error}</span>
@@ -355,8 +386,13 @@ export default function App() {
           tags={tags}
           repoPath={repoPath}
           onCheckout={async (branch) => {
-            await api.checkoutBranch(repoPath, branch);
-            refresh();
+            try {
+              await api.checkoutBranch(repoPath, branch);
+              refresh();
+            } catch (e) {
+              setError(String(e));
+              throw e;
+            }
           }}
           onMerge={async (branch) => {
             try {

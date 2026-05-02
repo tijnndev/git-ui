@@ -125,9 +125,11 @@ pub fn get_all_commits(repo_path: &str, limit: usize) -> Result<Vec<CommitInfo>,
 
 pub fn get_branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
-    let head_oid = repo.head().ok()
-        .and_then(|h| h.peel_to_commit().ok())
-        .map(|c| c.id());
+    // Match the branch HEAD points at, not every branch whose tip equals HEAD's commit
+    // (otherwise main + feature at the same commit would both be "current").
+    let head_branch_name = repo.head().ok()
+        .filter(|h| h.is_branch())
+        .and_then(|h| h.shorthand().map(|s| s.to_string()));
 
     let mut branches = Vec::new();
 
@@ -136,7 +138,7 @@ pub fn get_branches(repo_path: &str) -> Result<Vec<BranchInfo>, String> {
         let name = branch.name().map_err(|e| e.message().to_string())?
             .unwrap_or("").to_string();
         let tip = branch.get().peel_to_commit().map_err(|e| e.message().to_string())?;
-        let is_head = head_oid.map(|h| h == tip.id()).unwrap_or(false);
+        let is_head = head_branch_name.as_ref().map(|hb| hb == &name).unwrap_or(false);
         let upstream = branch.upstream().ok()
             .and_then(|u| u.name().ok().flatten().map(|s| s.to_string()));
 

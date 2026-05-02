@@ -4,6 +4,7 @@ import type { FileStatus } from "../types";
 import * as api from "../api";
 import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
 import { useToast } from "../toast";
+import ConfirmModal from "./ConfirmModal";
 
 interface Props {
   repoPath: string;
@@ -22,6 +23,8 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   const [amend, setAmend] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
   const [pushing, setPushing] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState<{ filePath: string } | null>(null);
+  const [confirmDiscardAll, setConfirmDiscardAll] = useState(false);
   const toast = useToast();
 
   const staged = status.filter((f) => f.staged);
@@ -67,8 +70,11 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
     }
   };
 
-  const handleDiscard = async (filePath: string) => {
-    if (!confirm(`Discard changes to "${filePath}"? This cannot be undone.`)) return;
+  const handleDiscard = (filePath: string) => {
+    setConfirmDiscard({ filePath });
+  };
+
+  const doDiscard = async (filePath: string) => {
     try {
       await api.discardFile(repoPath, filePath);
       onRefresh();
@@ -77,10 +83,13 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
     }
   };
 
-  const handleDiscardAll = async () => {
+  const handleDiscardAll = () => {
     const tracked = unstaged.filter((f) => f.status !== "untracked");
     if (tracked.length === 0) return;
-    if (!confirm(`Discard all ${tracked.length} tracked change(s)? This cannot be undone.`)) return;
+    setConfirmDiscardAll(true);
+  };
+
+  const doDiscardAll = async () => {
     try {
       await api.discardAll(repoPath);
       onRefresh();
@@ -142,6 +151,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   };
 
   return (
+    <>
     <div className="changes-sidebar" style={width !== undefined ? { width } : undefined}>
       <div className="wd-file-sections">
         <div className="wd-section">
@@ -252,5 +262,27 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
           </button>
         </div>
     </div>
+
+    {confirmDiscard && (
+      <ConfirmModal
+        title="Discard Changes"
+        message={`Discard changes to "${confirmDiscard.filePath}"? This cannot be undone.`}
+        confirmLabel="Discard"
+        danger
+        onConfirm={() => { doDiscard(confirmDiscard.filePath); setConfirmDiscard(null); }}
+        onCancel={() => setConfirmDiscard(null)}
+      />
+    )}
+    {confirmDiscardAll && (
+      <ConfirmModal
+        title="Discard All Changes"
+        message={`Discard all ${unstaged.filter((f) => f.status !== "untracked").length} tracked change(s)? This cannot be undone.`}
+        confirmLabel="Discard All"
+        danger
+        onConfirm={() => { doDiscardAll(); setConfirmDiscardAll(false); }}
+        onCancel={() => setConfirmDiscardAll(false)}
+      />
+    )}
+    </>
   );
 }

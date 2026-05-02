@@ -14,9 +14,10 @@ interface Props {
   onOpenSettings: () => void;
   onPull?: () => void;
   pulling?: boolean;
+  pullTooltip?: string;
 }
 
-export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome, onOpenSettings, onPull, pulling }: Props) {
+export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoHome, onOpenSettings, onPull, pulling, pullTooltip }: Props) {
 
   return (
     <div className="titlebar">
@@ -40,7 +41,7 @@ export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoH
           <FolderOpen size={14} />
         </button>
         {repoPath && onPull && (
-          <button className="titlebar-btn" onClick={onPull} disabled={pulling} title="Pull from upstream">
+          <button className="titlebar-btn" onClick={onPull} disabled={pulling} title={pullTooltip ?? "Pull"}>
             <Download size={14} />
           </button>
         )}
