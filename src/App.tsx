@@ -447,6 +447,8 @@ export default function App() {
                     selectedCommit={selectedCommit}
                     onSelectCommit={setSelectedCommit}
                     settings={settings}
+                    repoPath={repoPath}
+                    onRefresh={refresh}
                   />
                 )
               }

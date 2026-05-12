@@ -999,6 +999,120 @@ body {
   color: var(--red);
 }
 
+/* ── Branch context menu ────────────────────────────────── */
+
+.branch-context-menu {
+  position: fixed;
+  z-index: 300;
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 220px;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.branch-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 14px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.branch-context-menu button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.branch-context-menu button.danger {
+  color: var(--text-secondary);
+}
+
+.branch-context-menu button.danger:hover {
+  background: rgba(240, 80, 80, 0.12);
+  color: var(--red);
+}
+
+.branch-context-menu-separator {
+  height: 1px;
+  background: var(--border-light);
+  margin: 4px 0;
+}
+
+.commit-ctx-header {
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.commit-ctx-submenu {
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  margin: 2px 0;
+}
+
+.commit-ctx-submenu button {
+  padding-left: 28px;
+  font-style: italic;
+}
+
+.commit-ctx-form {
+  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border-top: 1px solid var(--border-light);
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-panel);
+  margin: 2px 0;
+}
+
+.commit-ctx-form input {
+  width: 100%;
+  padding: 4px 7px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  box-sizing: border-box;
+}
+
+.commit-ctx-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ctx-form-submit {
+  align-self: flex-end;
+  padding: 4px 10px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ctx-form-submit:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* ── Tag form (in CommitDetail) ─────────────────────────── */
 
 .tag-form {

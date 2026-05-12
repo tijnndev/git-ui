@@ -1,6 +1,9 @@
 import { useMemo, useRef, useEffect, useCallback, useState, useDeferredValue } from "react";
+import { GitMerge, RotateCcw, ArrowDown, History, Tag, GitBranch } from "lucide-react";
 import type { CommitInfo, BranchInfo, TagInfo } from "../types";
 import type { AppSettings } from "../settings";
+import * as api from "../api";
+import { useToast } from "../toast";
 
 interface Props {
   commits: CommitInfo[];
@@ -9,6 +12,8 @@ interface Props {
   selectedCommit: CommitInfo | null;
   onSelectCommit: (commit: CommitInfo) => void;
   settings: AppSettings;
+  repoPath: string;
+  onRefresh: () => void;
 }
 
 interface LaneCommit {
@@ -127,11 +132,109 @@ function computeGraph(commits: CommitInfo[]): { nodes: LaneCommit[]; edges: Grap
   return { nodes, edges };
 }
 
-export default function CommitGraph({ commits, branches, tags, selectedCommit, onSelectCommit, settings }: Props) {
+export default function CommitGraph({ commits, branches, tags, selectedCommit, onSelectCommit, settings, repoPath, onRefresh }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState("");
+  const toast = useToast();
+
+  // ── Commit context menu ───────────────────────────────────
+  const [commitCtxMenu, setCommitCtxMenu] = useState<{ commit: CommitInfo; x: number; y: number } | null>(null);
+  const [ctxResetOpen, setCtxResetOpen] = useState(false);
+  const [ctxTagForm, setCtxTagForm] = useState(false);
+  const [ctxTagName, setCtxTagName] = useState("");
+  const [ctxTagMsg, setCtxTagMsg] = useState("");
+  const [ctxBranchForm, setCtxBranchForm] = useState(false);
+  const [ctxBranchName, setCtxBranchName] = useState("");
+
+  const closeCtxMenu = useCallback(() => {
+    setCommitCtxMenu(null);
+    setCtxResetOpen(false);
+    setCtxTagForm(false);
+    setCtxTagName("");
+    setCtxTagMsg("");
+    setCtxBranchForm(false);
+    setCtxBranchName("");
+  }, []);
+
+  useEffect(() => {
+    if (!commitCtxMenu) return;
+    const close = () => closeCtxMenu();
+    const closeOnEsc = (e: KeyboardEvent) => { if (e.key === "Escape") closeCtxMenu(); };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", closeOnEsc);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", closeOnEsc);
+    };
+  }, [commitCtxMenu, closeCtxMenu]);
+
+  const handleCtxCherryPick = useCallback(async () => {
+    if (!commitCtxMenu) return;
+    closeCtxMenu();
+    try {
+      await api.cherryPick(repoPath, commitCtxMenu.commit.oid);
+      toast.success(`Cherry-picked ${commitCtxMenu.commit.short_oid}`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, closeCtxMenu, repoPath, onRefresh, toast]);
+
+  const handleCtxRevert = useCallback(async () => {
+    if (!commitCtxMenu) return;
+    closeCtxMenu();
+    try {
+      await api.revertCommit(repoPath, commitCtxMenu.commit.oid);
+      toast.success(`Reverted ${commitCtxMenu.commit.short_oid}`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, closeCtxMenu, repoPath, onRefresh, toast]);
+
+  const handleCtxCheckout = useCallback(async () => {
+    if (!commitCtxMenu) return;
+    if (!confirm(`Checkout commit ${commitCtxMenu.commit.short_oid}? HEAD will be detached.`)) return;
+    closeCtxMenu();
+    try {
+      await api.checkoutCommit(repoPath, commitCtxMenu.commit.oid);
+      toast.success(`Checked out ${commitCtxMenu.commit.short_oid} (detached HEAD)`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, closeCtxMenu, repoPath, onRefresh, toast]);
+
+  const handleCtxReset = useCallback(async (mode: "soft" | "mixed" | "hard") => {
+    if (!commitCtxMenu) return;
+    if (mode === "hard" && !confirm(`Hard reset to ${commitCtxMenu.commit.short_oid}? All uncommitted changes will be lost.`)) return;
+    closeCtxMenu();
+    const label = { soft: "Soft", mixed: "Mixed", hard: "Hard" }[mode];
+    try {
+      await api.resetToCommit(repoPath, commitCtxMenu.commit.oid, mode);
+      toast.success(`${label} reset to ${commitCtxMenu.commit.short_oid}`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, closeCtxMenu, repoPath, onRefresh, toast]);
+
+  const handleCtxCreateTag = useCallback(async () => {
+    if (!commitCtxMenu || !ctxTagName.trim()) return;
+    const name = ctxTagName.trim();
+    const msg = ctxTagMsg.trim() || undefined;
+    closeCtxMenu();
+    try {
+      await api.createTag(repoPath, name, commitCtxMenu.commit.oid, msg);
+      toast.success(`Tag "${name}" created`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, ctxTagName, ctxTagMsg, closeCtxMenu, repoPath, onRefresh, toast]);
+
+  const handleCtxCreateBranch = useCallback(async () => {
+    if (!commitCtxMenu || !ctxBranchName.trim()) return;
+    const name = ctxBranchName.trim();
+    closeCtxMenu();
+    try {
+      await api.createBranch(repoPath, name, commitCtxMenu.commit.oid);
+      toast.success(`Branch "${name}" created`);
+      onRefresh();
+    } catch (e) { toast.error(String(e), 0); }
+  }, [commitCtxMenu, ctxBranchName, closeCtxMenu, repoPath, onRefresh, toast]);
 
   // Deferred so computeGraph runs in an interruptible background render.
   // flushSync (triggered by clicking a new repo) will abandon this render
@@ -426,7 +529,21 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
     }
   }, [graphData, onSelectCommit, ROW_H]);
 
+  const handleCanvasContextMenu = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const scrollTop = scrollRef.current?.scrollTop ?? 0;
+    const row = Math.floor((y + scrollTop) / ROW_H);
+    if (row >= 0 && row < graphData.nodes.length) {
+      setCommitCtxMenu({ commit: graphData.nodes[row].commit, x: e.clientX, y: e.clientY });
+    }
+  }, [graphData, ROW_H]);
+
   return (
+    <>
     <div className="commit-graph-container" ref={containerRef}>
       <div className="commit-graph-search">
         <input
@@ -465,10 +582,78 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
             className="graph-canvas"
             style={{ width: "100%", display: "block", position: "sticky", top: 0 }}
             onClick={handleCanvasClick}
+            onContextMenu={handleCanvasContextMenu}
           />
         </div>
         )}
       </div>
     </div>
+
+    {commitCtxMenu && (
+      <div
+        className="branch-context-menu"
+        style={{ top: commitCtxMenu.y, left: commitCtxMenu.x }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="commit-ctx-header">{commitCtxMenu.commit.short_oid} — {commitCtxMenu.commit.message.split("\n")[0].slice(0, 48)}</div>
+        <div className="branch-context-menu-separator" />
+        <button onClick={() => void handleCtxCherryPick()}>
+          <GitMerge size={12} /> Cherry-pick
+        </button>
+        <button onClick={() => void handleCtxRevert()}>
+          <RotateCcw size={12} /> Revert
+        </button>
+        <button onClick={() => void handleCtxCheckout()}>
+          <ArrowDown size={12} /> Checkout
+        </button>
+        <button onClick={() => { setCtxResetOpen((v) => !v); setCtxTagForm(false); setCtxBranchForm(false); }}>
+          <History size={12} /> Reset…
+        </button>
+        {ctxResetOpen && (
+          <div className="commit-ctx-submenu">
+            <button onClick={() => void handleCtxReset("soft")}>Soft — keep changes staged</button>
+            <button onClick={() => void handleCtxReset("mixed")}>Mixed — keep changes unstaged</button>
+            <button className="danger" onClick={() => void handleCtxReset("hard")}>Hard — discard all changes</button>
+          </div>
+        )}
+        <button onClick={() => { setCtxTagForm((v) => !v); setCtxResetOpen(false); setCtxBranchForm(false); }}>
+          <Tag size={12} /> Tag
+        </button>
+        {ctxTagForm && (
+          <div className="commit-ctx-form" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              autoFocus
+              placeholder="Tag name (e.g. v1.0.0)"
+              value={ctxTagName}
+              onChange={(e) => setCtxTagName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCtxCreateTag(); if (e.key === "Escape") setCtxTagForm(false); }}
+            />
+            <input
+              placeholder="Message (optional)"
+              value={ctxTagMsg}
+              onChange={(e) => setCtxTagMsg(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCtxCreateTag(); if (e.key === "Escape") setCtxTagForm(false); }}
+            />
+            <button className="ctx-form-submit" onClick={() => void handleCtxCreateTag()} disabled={!ctxTagName.trim()}>Create tag</button>
+          </div>
+        )}
+        <button onClick={() => { setCtxBranchForm((v) => !v); setCtxResetOpen(false); setCtxTagForm(false); }}>
+          <GitBranch size={12} /> Branch
+        </button>
+        {ctxBranchForm && (
+          <div className="commit-ctx-form" onMouseDown={(e) => e.stopPropagation()}>
+            <input
+              autoFocus
+              placeholder="New branch name"
+              value={ctxBranchName}
+              onChange={(e) => setCtxBranchName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCtxCreateBranch(); if (e.key === "Escape") setCtxBranchForm(false); }}
+            />
+            <button className="ctx-form-submit" onClick={() => void handleCtxCreateBranch()} disabled={!ctxBranchName.trim()}>Create branch</button>
+          </div>
+        )}
+      </div>
+    )}
+    </>
   );
 }

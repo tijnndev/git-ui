@@ -48,6 +48,7 @@ export default function Sidebar({
   const [pushingTag, setPushingTag] = useState<string | null>(null);
   const [deletingRemoteBranch, setDeletingRemoteBranch] = useState<string | null>(null);
   const [checkoutPending, setCheckoutPending] = useState<string | null>(null);
+  const [branchContextMenu, setBranchContextMenu] = useState<{ branch: string; isHead: boolean; x: number; y: number } | null>(null);
   const toast = useToast();
 
   const loadRemotes = () => {
@@ -138,6 +139,18 @@ export default function Sidebar({
     loadRemotes();
     loadAheadBehind();
   }, [repoPath]);
+
+  useEffect(() => {
+    if (!branchContextMenu) return;
+    const close = () => setBranchContextMenu(null);
+    const closeOnEsc = (e: KeyboardEvent) => { if (e.key === "Escape") setBranchContextMenu(null); };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", closeOnEsc);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", closeOnEsc);
+    };
+  }, [branchContextMenu]);
 
   const submitNewBranch = async () => {
     const name = newBranchName.trim();
@@ -506,6 +519,11 @@ export default function Sidebar({
           <div
             key={b.name}
             className={`branch-item ${b.is_head ? "active" : ""}${checkoutPending === b.name ? " branch-item-checkout-pending" : ""}`}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setBranchContextMenu({ branch: b.name, isHead: b.is_head, x: e.clientX, y: e.clientY });
+            }}
           >
             {renamingBranch === b.name ? (
               <div className="new-branch-form" style={{ flex: 1 }}>
@@ -543,32 +561,6 @@ export default function Sidebar({
                 >
                   <Upload size={10} className={pushingBranch === b.name ? "spin" : ""} />
                 </button>
-                <button
-                  className="icon-btn"
-                  onClick={(e) => handleForcePush(e, b.name)}
-                  title={`Force-push ${b.name} (--force-with-lease)`}
-                >
-                  <Upload size={10} style={{ opacity: 0.5 }} />
-                </button>
-                <button className="icon-btn" onClick={(e) => startRename(e, b.name)} title="Rename branch">
-                  <Edit2 size={10} />
-                </button>
-                {!b.is_head && (
-                  <>
-                    <button className="icon-btn" onClick={(e) => handleRebaseBranch(e, b.name)} title={`Rebase current branch onto ${b.name}`}>
-                      <Shuffle size={10} />
-                    </button>
-                    <button className="icon-btn" onClick={(e) => handleSquashMerge(e, b.name)} title={`Squash-merge ${b.name} into current branch`}>
-                      <GitMerge size={10} style={{ opacity: 0.6 }} />
-                    </button>
-                    <button className="icon-btn" onClick={(e) => { e.stopPropagation(); onMerge(b.name); }} title={`Merge ${b.name} into current branch`}>
-                      <GitMerge size={10} />
-                    </button>
-                    <button className="icon-btn danger" onClick={(e) => handleDeleteBranch(e, b.name)} title="Delete branch">
-                      <Trash2 size={10} />
-                    </button>
-                  </>
-                )}
               </>
             )}
           </div>
@@ -828,6 +820,42 @@ export default function Sidebar({
         ))}
       </div>
     </div>
+
+    {branchContextMenu && (
+      <div
+        className="branch-context-menu"
+        style={{ top: branchContextMenu.y, left: branchContextMenu.x }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button onClick={(e) => { handlePushBranch(e, branchContextMenu.branch); setBranchContextMenu(null); }}>
+          <Upload size={12} /> Push {branchContextMenu.branch}
+        </button>
+        <button onClick={(e) => { handleForcePush(e, branchContextMenu.branch); setBranchContextMenu(null); }}>
+          <Upload size={12} style={{ opacity: 0.5 }} /> Force-push {branchContextMenu.branch}
+        </button>
+        <button onClick={(e) => { startRename(e, branchContextMenu.branch); setBranchContextMenu(null); }}>
+          <Edit2 size={12} /> Rename
+        </button>
+        {!branchContextMenu.isHead && (
+          <>
+            <div className="branch-context-menu-separator" />
+            <button onClick={(e) => { void (async () => { setBranchContextMenu(null); await handleRebaseBranch(e, branchContextMenu.branch); })(); }}>
+              <Shuffle size={12} /> Rebase current onto {branchContextMenu.branch}
+            </button>
+            <button onClick={(e) => { void (async () => { setBranchContextMenu(null); await handleSquashMerge(e, branchContextMenu.branch); })(); }}>
+              <GitMerge size={12} style={{ opacity: 0.6 }} /> Squash-merge into current
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); setBranchContextMenu(null); onMerge(branchContextMenu.branch); }}>
+              <GitMerge size={12} /> Merge into current
+            </button>
+            <div className="branch-context-menu-separator" />
+            <button className="danger" onClick={(e) => { void (async () => { setBranchContextMenu(null); await handleDeleteBranch(e, branchContextMenu.branch); })(); }}>
+              <Trash2 size={12} /> Delete {branchContextMenu.branch}
+            </button>
+          </>
+        )}
+      </div>
+    )}
     </>
   );
 }

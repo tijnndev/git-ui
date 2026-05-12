@@ -47,22 +47,20 @@ fn url_without_credentials(url: &str) -> String {
     }
 }
 
-/// Find the remote name whose stored URL matches this authenticated URL (ignoring credentials).
-fn remote_for_credential_override(repo_path: &str, auth_url: &str) -> Result<String, String> {
-    use git2::Repository;
-    let auth_norm = url_without_credentials(auth_url);
-    let repo = Repository::open(repo_path).map_err(|e| e.to_string())?;
-    let remotes = repo.remotes().map_err(|e| e.to_string())?;
-    for name in remotes.iter().flatten() {
-        if let Ok(r) = repo.find_remote(name) {
-            if let Some(u) = r.url() {
-                if url_without_credentials(u) == auth_norm {
-                    return Ok(name.to_string());
-                }
-            }
-        }
-    }
-    Ok("origin".to_string())
+/// From `https://user:token@github.com/path` extract `https://user:token@github.com/`
+/// and `https://github.com/` so we can build a git `url.<auth>.insteadOf=<clean>` rule.
+fn url_bases(auth_url: &str) -> Option<(String, String)> {
+    let scheme_end = auth_url.find("://")?;
+    let scheme = &auth_url[..scheme_end + 3]; // "https://"
+    let rest = &auth_url[scheme_end + 3..];
+    let at = rest.find('@')?;
+    let userinfo = &rest[..at];               // "user:token"
+    let after_at = &rest[at + 1..];
+    let host_end = after_at.find('/').unwrap_or(after_at.len());
+    let host = &after_at[..host_end];         // "github.com"
+    let auth_base = format!("{}{}@{}/", scheme, userinfo, host);
+    let clean_base = format!("{}{}/", scheme, host);
+    Some((auth_base, clean_base))
 }
 
 #[command]
@@ -180,10 +178,10 @@ pub fn git_push(repo_path: String, remote: Option<String>, branch: Option<String
     let remote_name = remote.unwrap_or_else(|| "origin".to_string());
 
     let mut cmd = git_cmd();
-    // Bypass Windows Git Credential Manager so embedded credentials in the URL are used.
-    if remote_name.contains('@') {
-        cmd.arg("-c").arg("credential.helper=");
-    }
+    // Disable interactive prompting and the credential helper so git never blocks
+    // waiting for terminal input in this windowless process.
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("-c").arg("credential.helper=");
     cmd.arg("push").arg(&remote_name);
     if let Some(ref b) = branch {
         cmd.arg(b);
@@ -219,6 +217,13 @@ pub fn git_pull(repo_path: String, remote: Option<String>) -> Result<String, Str
 
     let mut cmd = git_cmd();
 
+    // Never allow git to open an interactive prompt (/dev/tty or a GUI dialog).
+    // This process has no terminal, so any attempt to prompt for credentials would
+    // produce "bash: /dev/tty: No such device or address" and a fatal error.
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    // Always disable the credential helper so git never tries to invoke one.
+    cmd.arg("-c").arg("credential.helper=");
+
     // `git pull https://user:token@host/repo.git` treats the URL as a one-off remote and
     // typically merges that repo's default branch — not the current branch's upstream
     // (branch.*.merge / @{u}). That feels like "pull main into my feature branch".
@@ -231,15 +236,17 @@ pub fn git_pull(repo_path: String, remote: Option<String>) -> Result<String, Str
             .unwrap_or(false);
 
     if is_https_with_userinfo {
-        let logical = remote_for_credential_override(&repo_path, &arg)?;
-        cmd.arg("-c").arg("credential.helper=");
-        cmd.arg("-c")
-            .arg(format!("remote.{}.url={}", logical, arg));
-        cmd.arg("pull").arg(&logical);
-    } else {
-        if arg.contains('@') {
-            cmd.arg("-c").arg("credential.helper=");
+        // Use git's url.insteadOf rewriting so the stored remote URL (without
+        // credentials) is transparently rewritten to the authenticated URL before
+        // git touches the network.  This is more reliable than overriding
+        // remote.<name>.url because git uses the rewritten URL directly rather
+        // than re-resolving credentials through the (now-disabled) helper.
+        if let Some((auth_base, clean_base)) = url_bases(&arg) {
+            cmd.arg("-c")
+                .arg(format!("url.{}.insteadOf={}", auth_base, clean_base));
         }
+        cmd.arg("pull");
+    } else {
         cmd.arg("pull").arg(&arg);
     }
 
@@ -397,12 +404,14 @@ pub fn stash_apply(repo_path: String, index: usize) -> Result<(), String> {
 #[command]
 pub fn push_upstream(repo_path: String, remote: String, branch: String, username: Option<String>, token: Option<String>) -> Result<String, String> {
     let mut cmd = git_cmd();
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("-c").arg("credential.helper=");
     if let (Some(user), Some(tok)) = (&username, &token) {
         let url = resolve_remote_url(&repo_path, &remote)?;
         let auth_url = inject_credentials_into_url(&url, user, tok);
-        // Override the remote URL for this invocation only and disable GCM.
-        cmd.arg("-c").arg("credential.helper=")
-           .arg("-c").arg(format!("remote.{}.url={}", remote, auth_url));
+        if let Some((auth_base, clean_base)) = url_bases(&auth_url) {
+            cmd.arg("-c").arg(format!("url.{}.insteadOf={}", auth_base, clean_base));
+        }
     }
     cmd.arg("push").arg("-u").arg(&remote).arg(&branch);
     let output = cmd
@@ -422,11 +431,14 @@ pub fn push_upstream(repo_path: String, remote: String, branch: String, username
 #[command]
 pub fn force_push(repo_path: String, remote: String, branch: String, username: Option<String>, token: Option<String>) -> Result<String, String> {
     let mut cmd = git_cmd();
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.arg("-c").arg("credential.helper=");
     if let (Some(user), Some(tok)) = (&username, &token) {
         let url = resolve_remote_url(&repo_path, &remote)?;
         let auth_url = inject_credentials_into_url(&url, user, tok);
-        cmd.arg("-c").arg("credential.helper=")
-           .arg("-c").arg(format!("remote.{}.url={}", remote, auth_url));
+        if let Some((auth_base, clean_base)) = url_bases(&auth_url) {
+            cmd.arg("-c").arg(format!("url.{}.insteadOf={}", auth_base, clean_base));
+        }
     }
     cmd.arg("push").arg("--force-with-lease").arg(&remote).arg(&branch);
     let output = cmd
