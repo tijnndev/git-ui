@@ -225,7 +225,7 @@ pub fn git_pull(repo_path: String, remote: Option<String>) -> Result<String, Str
     cmd.arg("-c").arg("credential.helper=");
 
     // `git pull https://user:token@host/repo.git` treats the URL as a one-off remote and
-    // typically merges that repo's default branch — not the current branch's upstream
+    // typically merges that repo's default branch - not the current branch's upstream
     // (branch.*.merge / @{u}). That feels like "pull main into my feature branch".
     // Match GitKraken-style behavior: temporarily set remote.<name>.url to the auth URL,
     // then run `git pull <name>` so the correct upstream is merged.

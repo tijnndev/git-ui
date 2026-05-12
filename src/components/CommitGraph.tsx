@@ -346,7 +346,7 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
         // First segment: LC → WL
         if (fromRow >= firstRow && fromRow <= lastRow) drawSeg(LC, WL, fromRow);
 
-        // Middle segments: straight wire on WL — draw as one continuous line
+        // Middle segments: straight wire on WL - draw as one continuous line
         const midStart = Math.max(fromRow + 1, firstRow);
         const midEnd = Math.min(toRow - 2, lastRow);
         if (midStart <= midEnd) {
@@ -595,7 +595,7 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
         style={{ top: commitCtxMenu.y, left: commitCtxMenu.x }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="commit-ctx-header">{commitCtxMenu.commit.short_oid} — {commitCtxMenu.commit.message.split("\n")[0].slice(0, 48)}</div>
+        <div className="commit-ctx-header">{commitCtxMenu.commit.short_oid} - {commitCtxMenu.commit.message.split("\n")[0].slice(0, 48)}</div>
         <div className="branch-context-menu-separator" />
         <button onClick={() => void handleCtxCherryPick()}>
           <GitMerge size={12} /> Cherry-pick
@@ -611,9 +611,9 @@ export default function CommitGraph({ commits, branches, tags, selectedCommit, o
         </button>
         {ctxResetOpen && (
           <div className="commit-ctx-submenu">
-            <button onClick={() => void handleCtxReset("soft")}>Soft — keep changes staged</button>
-            <button onClick={() => void handleCtxReset("mixed")}>Mixed — keep changes unstaged</button>
-            <button className="danger" onClick={() => void handleCtxReset("hard")}>Hard — discard all changes</button>
+            <button onClick={() => void handleCtxReset("soft")}>Soft - keep changes staged</button>
+            <button onClick={() => void handleCtxReset("mixed")}>Mixed - keep changes unstaged</button>
+            <button className="danger" onClick={() => void handleCtxReset("hard")}>Hard - discard all changes</button>
           </div>
         )}
         <button onClick={() => { setCtxTagForm((v) => !v); setCtxResetOpen(false); setCtxBranchForm(false); }}>

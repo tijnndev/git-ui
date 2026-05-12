@@ -67,7 +67,7 @@ export default function Sidebar({
   const remoteBranches = branches.filter((b) => b.is_remote);
 
   const headBranchName = repoSummary?.head_branch ?? null;
-  // Prefer summary (true HEAD symref); avoid localBranches.find(is_head) alone — multiple
+  // Prefer summary (true HEAD symref); avoid localBranches.find(is_head) alone - multiple
   // branches can share HEAD's commit and the first match was often wrong (e.g. main).
   const currentLocalBranchName =
     headBranchName && !headBranchName.startsWith("HEAD detached")
@@ -390,11 +390,11 @@ export default function Sidebar({
             >
               {!currentLocalBranchName && hasBranchChoices && (
                 <option value="" disabled>
-                  Detached HEAD — select branch
+                  Detached HEAD - select branch
                 </option>
               )}
               {!hasBranchChoices && (
-                <option value="">(no branches — fetch remotes)</option>
+                <option value="">(no branches - fetch remotes)</option>
               )}
               {sortedLocalBranches.length > 0 && (
                 <optgroup label="Local">

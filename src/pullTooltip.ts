@@ -9,5 +9,5 @@ export function describePullTooltip(headBranch: string | null | undefined, branc
   if (local?.upstream) {
     return `Pull: merge ${local.upstream} into ${headBranch}`;
   }
-  return `Pull from origin — “${headBranch}” has no upstream yet; set one (e.g. first push with upstream) for predictable sync`;
+  return `Pull from origin - “${headBranch}” has no upstream yet; set one (e.g. first push with upstream) for predictable sync`;
 }

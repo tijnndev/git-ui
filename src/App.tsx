@@ -133,7 +133,7 @@ export default function App() {
 
   const loadRepo = useCallback(async (path: string) => {
     const loadId = ++loadIdRef.current;
-    // Show the repo page instantly — clear stale data synchronously so
+    // Show the repo page instantly - clear stale data synchronously so
     // React renders the skeleton UI in the same tick, before any await.
     setRepoPath(path);
     setRepoSummary(null);

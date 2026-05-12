@@ -124,7 +124,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
           ?? findAccountForUrl(remoteUrl, accounts);
 
         // If this repo is in a category with an account assigned but no matching account
-        // was found in the store, refuse to push — a silent fallback would let Git
+        // was found in the store, refuse to push - a silent fallback would let Git
         // Credential Manager supply the wrong cached credentials.
         if (categoryAccountId && !account) {
           toast.error(

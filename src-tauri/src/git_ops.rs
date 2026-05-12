@@ -796,7 +796,7 @@ pub fn squash_merge(repo_path: &str, branch_name: &str) -> Result<String, String
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     let combined = format!("{}{}", stdout, stderr).trim().to_string();
     if output.status.success() {
-        Ok(if combined.is_empty() { "Squash complete — changes are staged, commit when ready".to_string() } else { combined })
+        Ok(if combined.is_empty() { "Squash complete - changes are staged, commit when ready".to_string() } else { combined })
     } else {
         Err(if combined.is_empty() { "squash merge failed".to_string() } else { combined })
     }
@@ -872,7 +872,7 @@ pub fn checkout_remote_branch(repo_path: &str, remote_branch: &str) -> Result<()
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
     if out.status.success() { return Ok(()); }
-    // Branch may already exist locally — just switch to it
+    // Branch may already exist locally - just switch to it
     let out2 = git_cmd()
         .args(["checkout", local_name])
         .current_dir(repo_path)

@@ -12,7 +12,7 @@ A lightweight, self-contained Git client built with [Tauri v2](https://tauri.app
 - Assign repositories to **categories** (colour-coded groups, each with its own GitHub account) so the right credentials are always used automatically
 
 ### Commit graph
-- Visualised with D3.js — shows all branches as coloured lanes with merge lines
+- Visualised with D3.js - shows all branches as coloured lanes with merge lines
 - Columns: commit message, author, date, short hash (each individually toggleable)
 - Click any commit to inspect its diff, changed files, and full metadata
 - Cherry-pick, revert, create a tag, or copy the hash from the commit detail panel
@@ -35,7 +35,7 @@ A lightweight, self-contained Git client built with [Tauri v2](https://tauri.app
 - Discard changes per file
 
 ### Remote operations
-- Pull (merges the tracked upstream branch — not the remote's default branch)
+- Pull (merges the tracked upstream branch - not the remote's default branch)
 - Push with ahead/behind indicators per branch
 - Force-push with `--force-with-lease`
 - Fetch individual remotes or all remotes at once
@@ -48,13 +48,13 @@ A lightweight, self-contained Git client built with [Tauri v2](https://tauri.app
 - Pop, apply, or drop individual stash entries
 
 ### Authentication
-- Store multiple GitHub accounts (Personal Access Tokens — classic or fine-grained)
+- Store multiple GitHub accounts (Personal Access Tokens - classic or fine-grained)
 - Assign an account to a category; every repository in that category uses it automatically
-- Credentials are injected directly into HTTPS remote URLs at call time using git's `url.<auth>.insteadOf` mechanism — no credential helper, no interactive terminal prompt
+- Credentials are injected directly into HTTPS remote URLs at call time using git's `url.<auth>.insteadOf` mechanism - no credential helper, no interactive terminal prompt
 - Settings and accounts persist across app updates via `tauri-plugin-store`
 
 ### Appearance & settings
-- Fully customisable dark theme — edit any colour token from the Settings panel
+- Fully customisable dark theme - edit any colour token from the Settings panel
 - Adjust graph row height, lane width, font sizes, and max commit count
 - Custom CSS field for arbitrary overrides
 
@@ -67,7 +67,7 @@ A lightweight, self-contained Git client built with [Tauri v2](https://tauri.app
 | Desktop shell | Tauri v2 |
 | Frontend | React 18 + TypeScript, Vite |
 | Git operations | libgit2 via `git2-rs` (index, diff, log, branches, tags, stash) |
-| Network ops | Git CLI (`push`, `pull`, `fetch`) — spawned with `CREATE_NO_WINDOW` |
+| Network ops | Git CLI (`push`, `pull`, `fetch`) - spawned with `CREATE_NO_WINDOW` |
 | Commit graph | D3.js |
 | Icons | Lucide React |
 | Persistence | `tauri-plugin-store` (JSON file, survives dev↔prod origin changes) |
