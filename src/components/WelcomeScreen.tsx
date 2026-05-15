@@ -572,12 +572,25 @@ export default function WelcomeScreen({
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
   const [behindPaths, setBehindPaths] = useState<Set<string>>(new Set());
   const [ghAccounts, setGhAccounts] = useState<GitHubAccount[]>([]);
 
   useEffect(() => { loadAccounts().then(setGhAccounts); }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -755,13 +768,13 @@ export default function WelcomeScreen({
       <div className="launchpad-search">
         <Search size={13} className="launchpad-search-icon" />
         <input
+          ref={searchInputRef}
           className="launchpad-search-input"
           type="text"
           placeholder="Search repositories…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-        >
-        </input>
+        />
         {search && (
           <button className="launchpad-search-clear" onClick={() => setSearch("")}>
             <X size={12} />
