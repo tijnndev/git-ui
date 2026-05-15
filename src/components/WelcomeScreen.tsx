@@ -466,10 +466,10 @@ function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBe
       </div>
       <div className="launchpad-card-info">
         <div className="launchpad-card-name">
-            <span className="launchpad-card-name-text">{repo.name}</span>
-            {hasDirty && <span className="repo-dirty-dot" title="Uncommitted changes" />}
-            {hasBehind && <span className="repo-behind-dot" title="Commits to pull" />}
-          </div>
+          <span className="launchpad-card-name-text">{repo.name}</span>
+          {hasDirty && <span className="repo-dirty-dot" title="Uncommitted changes" />}
+          {hasBehind && <span className="repo-behind-dot" title="Commits to pull" />}
+        </div>
         <div className="launchpad-card-path">{repo.path}</div>
         <div className="launchpad-card-meta">
           <Clock size={11} />
@@ -525,7 +525,7 @@ function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBe
         <button
           className="launchpad-action-btn"
           title="Open in Explorer"
-          onClick={() => openInExplorer(repo.path).catch(() => {})}
+          onClick={() => openInExplorer(repo.path).catch(() => { })}
         >
           <FolderCog size={13} />
         </button>
@@ -582,11 +582,18 @@ export default function WelcomeScreen({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
+      if (!(e.ctrlKey || e.metaKey) || e.key !== "f") return;
+      const target = e.target;
+      if (
+        (target instanceof HTMLInputElement && target !== searchInputRef.current) ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
       }
+      e.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -640,13 +647,11 @@ export default function WelcomeScreen({
     clearSelection();
   };
 
-  // Filter repos by search query
   const query = search.toLowerCase();
   const filteredRepos = query
     ? recentRepos.filter((r) => r.name.toLowerCase().includes(query) || r.path.toLowerCase().includes(query))
     : recentRepos;
 
-  // Group repos by category
   const categoryRepos = new Map<string, RecentRepo[]>();
   const uncategorized: RecentRepo[] = [];
   for (const repo of filteredRepos) {
@@ -660,6 +665,7 @@ export default function WelcomeScreen({
   }
 
   const pinned = filteredRepos.filter((r) => r.pinned);
+  const recentUnpinned = filteredRepos.filter((r) => !r.pinned);
 
   function renderCard(repo: RecentRepo) {
     return (
@@ -868,7 +874,7 @@ export default function WelcomeScreen({
                   {pinned.length > 0 ? "Recent" : "All Repositories"}
                 </div>
                 <div className="launchpad-grid">
-                  {(pinned.length > 0 ? recentRepos.filter((r) => !r.pinned) : recentRepos).map(renderCard)}
+                  {(pinned.length > 0 ? recentUnpinned : filteredRepos).map(renderCard)}
                 </div>
               </section>
             ) : (
