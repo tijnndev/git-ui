@@ -343,10 +343,13 @@ export default function App() {
           onDeleteCategory={handleDeleteCategory}
           onAssignCategory={handleAssignCategory}
           onBulkAssignCategory={handleBulkAssignCategory}
-          onAddToLaunchpad={(path) => {
+          onAddToLaunchpad={(path, categoryId = null) => {
             const name = repoName(path);
-            if (!recentRepos.find((r) => r.path === path)) {
-              saveRecentRepos([{ path, name, lastOpened: Date.now(), pinned: false, categoryId: null }, ...recentRepos].slice(0, 50));
+            const existing = recentRepos.find((r) => r.path === path);
+            if (!existing) {
+              saveRecentRepos([{ path, name, lastOpened: Date.now(), pinned: false, categoryId }, ...recentRepos].slice(0, 50));
+            } else {
+              saveRecentRepos(recentRepos.map((r) => (r.path === path ? { ...r, categoryId } : r)));
             }
           }}
         />

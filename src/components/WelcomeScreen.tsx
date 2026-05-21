@@ -45,11 +45,12 @@ interface GhRepo {
 
 interface CloneDialogProps {
   onClose: () => void;
-  onCloned: (path: string) => void;
+  onCloned: (path: string, categoryId: string | null) => void;
   existingRepoNames: Set<string>;
+  categories: RepoCategory[];
 }
 
-function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps) {
+function CloneDialog({ onClose, onCloned, existingRepoNames, categories }: CloneDialogProps) {
   const [accounts, setAccounts] = useState<GitHubAccount[]>([]);
   const [accountId, setAccountId] = useState<string>("");
   const [reposByOwner, setReposByOwner] = useState<Map<string, GhRepo[]>>(new Map());
@@ -59,6 +60,7 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
   const [selected, setSelected] = useState<GhRepo | null>(null);
   const [dest, setDest] = useState("");
   const [folderName, setFolderName] = useState("");
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [useSSH, setUseSSH] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
@@ -164,7 +166,7 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
     setCloneError(null);
     try {
       await cloneRepo(url, finalDest);
-      onCloned(finalDest);
+      onCloned(finalDest, categoryId);
     } catch (e) {
       setCloneError(String(e));
     } finally {
@@ -296,8 +298,22 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
                   className="form-input"
                   value={folderName}
                   onChange={(e) => setFolderName(e.target.value)}
-                  style={{ marginBottom: 6 }}
+                  style={{ marginBottom: 12 }}
                 />
+
+                <label className="form-label">Category</label>
+                <select
+                  className="form-input form-select"
+                  value={categoryId ?? ""}
+                  onChange={(e) => setCategoryId(e.target.value === "" ? null : e.target.value)}
+                  style={{ marginBottom: 6 }}
+                >
+                  <option value="">Uncategorized</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                  ))}
+                </select>
+
                 {dest && folderName && (
                   <div className="form-section-hint">Will clone into: {dest}/{folderName}</div>
                 )}
@@ -560,7 +576,7 @@ interface Props {
   onDeleteCategory: (id: string) => void;
   onAssignCategory: (repoPath: string, categoryId: string | null) => void;
   onBulkAssignCategory: (paths: string[], categoryId: string | null) => void;
-  onAddToLaunchpad: (path: string) => void;
+  onAddToLaunchpad: (path: string, categoryId?: string | null) => void;
 }
 
 export default function WelcomeScreen({
@@ -920,9 +936,10 @@ export default function WelcomeScreen({
       {showCloneDialog && (
         <CloneDialog
           onClose={() => setShowCloneDialog(false)}
+          categories={categories}
           existingRepoNames={new Set(recentRepos.map((r) => r.name.toLowerCase()))}
-          onCloned={(path) => {
-            onAddToLaunchpad(path);
+          onCloned={(path, categoryId) => {
+            onAddToLaunchpad(path, categoryId);
             setShowCloneDialog(false);
           }}
         />
