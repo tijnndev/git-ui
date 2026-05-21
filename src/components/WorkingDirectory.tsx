@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
-import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3, Terminal } from "lucide-react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Plus, Minus, Check, RotateCcw, Package, Upload, Trash2, Edit3 } from "lucide-react";
 import type { FileStatus } from "../types";
 import * as api from "../api";
 import { loadAccounts, findAccountForUrl, injectToken } from "../github-accounts";
 import { useToast } from "../toast";
 import ConfirmModal from "./ConfirmModal";
+import { suggestCommitTitle, formatCommitMessage } from "../commitMessage";
 
 interface Props {
   repoPath: string;
@@ -18,7 +19,10 @@ interface Props {
 }
 
 export default function WorkingDirectory({ repoPath, status, onRefresh, categoryAccountId, selectedFile, selectedStaged, onSelectFile, width }: Props) {
-  const [commitMsg, setCommitMsg] = useState("");
+  const [commitTitle, setCommitTitle] = useState("");
+  const [commitDescription, setCommitDescription] = useState("");
+  const commitTitleEdited = useRef(false);
+  const lastAutoTitle = useRef("");
   const [committing, setCommitting] = useState(false);
   const [amend, setAmend] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
@@ -27,12 +31,29 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   const [confirmDiscardAll, setConfirmDiscardAll] = useState(false);
   const toast = useToast();
 
-  const staged = status.filter((f) => f.staged);
-  const unstaged = status.filter((f) => !f.staged);
+  const staged = useMemo(() => status.filter((f) => f.staged), [status]);
+  const unstaged = useMemo(() => status.filter((f) => !f.staged), [status]);
+  const stagedSuggestionKey =
+    staged.length === 1 ? `${staged[0].path}:${staged[0].status}` : `count:${staged.length}`;
 
   useEffect(() => {
-    // nothing to clear when repo changes – parent manages selection
+    commitTitleEdited.current = false;
+    lastAutoTitle.current = "";
+    setCommitTitle("");
+    setCommitDescription("");
   }, [repoPath]);
+
+  useEffect(() => {
+    if (commitTitleEdited.current) return;
+    if (staged.length === 1) {
+      const suggested = suggestCommitTitle(staged[0]);
+      lastAutoTitle.current = suggested;
+      setCommitTitle(suggested);
+    } else if (lastAutoTitle.current) {
+      lastAutoTitle.current = "";
+      setCommitTitle("");
+    }
+  }, [stagedSuggestionKey, staged]);
 
   const handleStage = async (filePath: string) => {
     await api.stageFile(repoPath, filePath);
@@ -50,17 +71,21 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   };
 
   const handleCommit = async () => {
-    if (!commitMsg.trim()) return;
+    const message = formatCommitMessage(commitTitle, commitDescription);
+    if (!message.trim()) return;
     setCommitting(true);
     try {
       if (amend) {
-        await api.amendCommit(repoPath, commitMsg.trim());
+        await api.amendCommit(repoPath, message);
         toast.success("Commit amended");
       } else {
-        await api.commitChanges(repoPath, commitMsg.trim());
+        await api.commitChanges(repoPath, message);
         toast.success("Commit created");
       }
-      setCommitMsg("");
+      commitTitleEdited.current = false;
+      lastAutoTitle.current = "";
+      setCommitTitle("");
+      setCommitDescription("");
       setAmend(false);
       onRefresh();
     } catch (e) {
@@ -218,12 +243,21 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
       </div>
 
       <div className="commit-form">
+          <input
+            className="commit-input commit-title-input"
+            placeholder="Summary (required)"
+            value={commitTitle}
+            onChange={(e) => {
+              commitTitleEdited.current = true;
+              setCommitTitle(e.target.value);
+            }}
+          />
           <textarea
-            className="commit-input"
-            placeholder="Commit message..."
-            value={commitMsg}
-            onChange={(e) => setCommitMsg(e.target.value)}
-            rows={3}
+            className="commit-input commit-description-input"
+            placeholder="Description (optional)"
+            value={commitDescription}
+            onChange={(e) => setCommitDescription(e.target.value)}
+            rows={2}
           />
           <label className="amend-label">
             <input type="checkbox" checked={amend} onChange={(e) => setAmend(e.target.checked)} />
@@ -233,7 +267,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
           <button
             className="btn-primary"
             onClick={handleCommit}
-            disabled={!commitMsg.trim() || (staged.length === 0 && !amend) || committing}
+            disabled={!commitTitle.trim() || (staged.length === 0 && !amend) || committing}
           >
             <Check size={14} />
             {committing ? (amend ? "Amending..." : "Committing...") : (amend ? "Amend Commit" : "Commit")}

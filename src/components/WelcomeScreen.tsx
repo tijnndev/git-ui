@@ -5,6 +5,7 @@ import { loadAccounts, injectToken } from "../github-accounts";
 import type { GitHubAccount } from "../github-accounts";
 import { getStatus, cloneRepo, openInExplorer, getHeadBehind } from "../api";
 import { open } from "@tauri-apps/plugin-dialog";
+import { matchesSearch } from "../search";
 
 const PRESET_COLORS = [
   "#009280", "#6366f1", "#f05050", "#e8b84b",
@@ -133,13 +134,16 @@ function CloneDialog({ onClose, onCloned, existingRepoNames }: CloneDialogProps)
     if (selected) setFolderName(selected.name);
   }, [selected]);
 
-  const q = search.toLowerCase();
+  const q = search.trim();
   // Build filtered sections: Map<owner, GhRepo[]>
   const filteredByOwner = new Map<string, GhRepo[]>();
   for (const [owner, repos] of reposByOwner) {
     const filtered = repos.filter((r) =>
       !existingRepoNames.has(r.name.toLowerCase()) &&
-      (q === "" || r.full_name.toLowerCase().includes(q) || (r.description ?? "").toLowerCase().includes(q))
+      (q === "" ||
+        matchesSearch(r.name, q) ||
+        matchesSearch(r.full_name, q) ||
+        matchesSearch(r.description ?? "", q))
     );
     if (filtered.length > 0) filteredByOwner.set(owner, filtered);
   }
@@ -647,9 +651,9 @@ export default function WelcomeScreen({
     clearSelection();
   };
 
-  const query = search.toLowerCase();
+  const query = search.trim();
   const filteredRepos = query
-    ? recentRepos.filter((r) => r.name.toLowerCase().includes(query) || r.path.toLowerCase().includes(query))
+    ? recentRepos.filter((r) => matchesSearch(r.name, query) || matchesSearch(r.path, query))
     : recentRepos;
 
   const categoryRepos = new Map<string, RecentRepo[]>();

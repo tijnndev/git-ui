@@ -87,8 +87,8 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-shrink: 0;
-  max-width: 500px;
+  flex: 1;
+  min-width: 0;
   padding-right: 8px;
 }
 
@@ -108,13 +108,15 @@ body {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 13px;
+  flex-shrink: 0;
 }
 
 .titlebar-path {
   font-size: 11px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  max-width: 300px;
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1651,6 +1653,15 @@ body {
   resize: vertical;
   outline: none;
   transition: border-color 0.15s;
+  width: 100%;
+}
+
+.commit-title-input {
+  resize: none;
+}
+
+.commit-description-input {
+  min-height: 48px;
 }
 
 .commit-input:focus {
