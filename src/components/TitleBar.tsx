@@ -26,10 +26,12 @@ export default function TitleBar({ title, repoPath, onOpenRepo, onRefresh, onGoH
           <GitBranch size={16} />
         </div>
         <span className="titlebar-title">{title}</span>
-        {repoPath && (
-          <span className="titlebar-path">{repoPath}</span>
-        )}
       </div>
+      {repoPath && (
+        <span className="titlebar-path" data-tauri-drag-region title={repoPath}>
+          {repoPath}
+        </span>
+      )}
       <div className="titlebar-drag-fill" data-tauri-drag-region />
       <div className="titlebar-actions">
         {onGoHome && (
