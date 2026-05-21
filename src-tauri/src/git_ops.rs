@@ -471,22 +471,6 @@ pub fn clone_repo(url: &str, dest: &str) -> Result<(), String> {
     }
 }
 
-pub fn pull(repo_path: &str) -> Result<String, String> {
-    let output = git_cmd()
-        .args(["pull"])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let combined = format!("{}{}", stdout, stderr).trim().to_string();
-    if output.status.success() {
-        Ok(if combined.is_empty() { "Already up to date.".to_string() } else { combined })
-    } else {
-        Err(if combined.is_empty() { "git pull failed".to_string() } else { combined })
-    }
-}
-
 pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
     // `git restore` (git ≥ 2.23) discards working-tree changes cleanly.
     // Fall back to `git checkout HEAD -- <file>` for older versions.
@@ -887,36 +871,4 @@ pub fn stash_apply(repo_path: &str, index: usize) -> Result<(), String> {
     let mut repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     repo.stash_apply(index, None).map_err(|e| e.message().to_string())?;
     Ok(())
-}
-
-pub fn push_upstream(repo_path: &str, remote: &str, branch: &str) -> Result<String, String> {
-    let output = git_cmd()
-        .args(["push", "-u", remote, branch])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let combined = format!("{}{}", stdout, stderr).trim().to_string();
-    if output.status.success() {
-        Ok(if combined.is_empty() { "Push successful".to_string() } else { combined })
-    } else {
-        Err(if combined.is_empty() { "git push failed".to_string() } else { combined })
-    }
-}
-
-pub fn force_push(repo_path: &str, remote: &str, branch: &str) -> Result<String, String> {
-    let output = git_cmd()
-        .args(["push", "--force-with-lease", remote, branch])
-        .current_dir(repo_path)
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let combined = format!("{}{}", stdout, stderr).trim().to_string();
-    if output.status.success() {
-        Ok(if combined.is_empty() { "Force push successful".to_string() } else { combined })
-    } else {
-        Err(if combined.is_empty() { "git push --force-with-lease failed".to_string() } else { combined })
-    }
 }

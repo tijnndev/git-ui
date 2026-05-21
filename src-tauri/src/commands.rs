@@ -33,20 +33,6 @@ fn resolve_remote_url(repo_path: &str, remote: &str) -> Result<String, String> {
     Ok(rem.url().unwrap_or("").to_string())
 }
 
-/// `https://user:pass@host/path` → `https://host/path` for comparing configured remotes.
-fn url_without_credentials(url: &str) -> String {
-    let Some(pos) = url.find("://") else {
-        return url.to_string();
-    };
-    let scheme = &url[..pos + 3];
-    let rest = &url[pos + 3..];
-    if let Some(at) = rest.find('@') {
-        format!("{}{}", scheme, &rest[at + 1..])
-    } else {
-        url.to_string()
-    }
-}
-
 /// From `https://user:token@github.com/path` extract `https://user:token@github.com/`
 /// and `https://github.com/` so we can build a git `url.<auth>.insteadOf=<clean>` rule.
 fn url_bases(auth_url: &str) -> Option<(String, String)> {
