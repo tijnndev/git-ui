@@ -75,6 +75,11 @@ pub fn get_status(repo_path: String) -> Result<Vec<FileStatus>, String> {
 }
 
 #[command]
+pub fn is_repo_dirty(repo_path: String) -> Result<bool, String> {
+    git_ops::is_repo_dirty(&repo_path)
+}
+
+#[command]
 pub fn get_diff(repo_path: String, commit_oid: Option<String>, staged: Option<bool>) -> Result<Vec<FileDiff>, String> {
     git_ops::get_diff(&repo_path, commit_oid, staged.unwrap_or(false))
 }

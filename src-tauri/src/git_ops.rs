@@ -194,6 +194,19 @@ pub fn get_status(repo_path: &str) -> Result<Vec<FileStatus>, String> {
     Ok(result)
 }
 
+/// Lightweight dirty check for the launchpad (no per-file status list).
+pub fn is_repo_dirty(repo_path: &str) -> Result<bool, String> {
+    let out = git_cmd()
+        .args(["status", "--porcelain", "--ignore-submodules"])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if !out.status.success() {
+        return Ok(false);
+    }
+    Ok(!out.stdout.is_empty())
+}
+
 pub fn get_diff(repo_path: &str, commit_oid: Option<String>, staged: bool) -> Result<Vec<FileDiff>, String> {
     let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
     let diff = if let Some(oid_str) = commit_oid {

@@ -69,6 +69,8 @@ export interface RecentRepo {
   lastOpened: number;
   pinned: boolean;
   categoryId?: string | null;
+  /** Cached from last open; refreshed in the background on the launchpad. */
+  hasLocalChanges?: boolean;
 }
 
 export interface RepoCategory {

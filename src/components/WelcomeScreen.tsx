@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from "react";
-import { FolderOpen, FolderPlus, Star, Trash2, GitBranch, Clock, Plus, Tag, Edit2, Key, X, CheckSquare, Square, MoveRight, Search, Download, FolderSearch, FolderCog } from "lucide-react";
+import { useState, useRef, useEffect, useMemo, useCallback, memo } from "react";
+import { FolderOpen, FolderPlus, Star, Trash2, GitBranch, Clock, Plus, Tag, Edit2, Key, X, CheckSquare, Square, MoveRight, Search, Download, FolderSearch, FolderCog, RefreshCw } from "lucide-react";
 import type { RecentRepo, RepoCategory } from "../types";
 import { loadAccounts, injectToken } from "../github-accounts";
 import type { GitHubAccount } from "../github-accounts";
-import { getStatus, cloneRepo, openInExplorer, getHeadBehind } from "../api";
+import { isRepoDirty, cloneRepo, openInExplorer, getHeadBehind } from "../api";
 import { open } from "@tauri-apps/plugin-dialog";
 import { matchesSearch } from "../search";
 
@@ -457,7 +457,7 @@ interface RepoCardProps {
   onOpenAssign: (e: React.MouseEvent) => void;
 }
 
-function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBehind, onOpen, onPin, onRemove, onAssignCategory, onToggleSelect, assignOpen, onOpenAssign }: RepoCardProps) {
+const RepoCard = memo(function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBehind, onOpen, onPin, onRemove, onAssignCategory, onToggleSelect, assignOpen, onOpenAssign }: RepoCardProps) {
   const category = categories.find((c) => c.id === repo.categoryId);
 
   return (
@@ -559,7 +559,7 @@ function RepoCard({ repo, categories, selected, selectionActive, hasDirty, hasBe
       </div>
     </div>
   );
-}
+});
 
 // ── Main Component ────────────────────────────────────────────
 
@@ -594,9 +594,63 @@ export default function WelcomeScreen({
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
-  const [dirtyPaths, setDirtyPaths] = useState<Set<string>>(new Set());
-  const [behindPaths, setBehindPaths] = useState<Set<string>>(new Set());
+  const cachedDirtyPaths = useMemo(
+    () => new Set(recentRepos.filter((r) => r.hasLocalChanges).map((r) => r.path)),
+    [recentRepos]
+  );
+  /** Non-null after a manual refresh; otherwise use {@link cachedDirtyPaths}. */
+  const [dirtyPaths, setDirtyPaths] = useState<Set<string> | null>(null);
+  const [behindPaths, setBehindPaths] = useState<Set<string> | null>(null);
+  const [scanningStatus, setScanningStatus] = useState(false);
+  const scanningRef = useRef(false);
   const [ghAccounts, setGhAccounts] = useState<GitHubAccount[]>([]);
+
+  const emptyBehind = useMemo(() => new Set<string>(), []);
+  const displayDirtyPaths = dirtyPaths ?? cachedDirtyPaths;
+  const displayBehindPaths = behindPaths ?? emptyBehind;
+
+  const cacheKey = useMemo(
+    () => recentRepos.map((r) => `${r.path}\t${r.hasLocalChanges ? 1 : 0}`).join("\n"),
+    [recentRepos]
+  );
+
+  // Drop manual refresh results when cache updates (e.g. after opening a repo).
+  useEffect(() => {
+    setDirtyPaths(null);
+    setBehindPaths(null);
+  }, [cacheKey]);
+
+  const refreshRepoStatus = useCallback(async () => {
+    if (scanningRef.current) return;
+    scanningRef.current = true;
+    setScanningStatus(true);
+    const paths = recentRepos.map((r) => r.path);
+    const dirty = new Set<string>();
+    const behind = new Set<string>();
+    try {
+      for (const p of paths) {
+        try {
+          if (await isRepoDirty(p)) dirty.add(p);
+        } catch {
+          // skip missing repos
+        }
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
+      setDirtyPaths(dirty);
+      for (const p of paths) {
+        try {
+          if ((await getHeadBehind(p)) > 0) behind.add(p);
+        } catch {
+          // skip
+        }
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
+      setBehindPaths(behind);
+    } finally {
+      scanningRef.current = false;
+      setScanningStatus(false);
+    }
+  }, [recentRepos]);
 
   useEffect(() => { loadAccounts().then(setGhAccounts); }, []);
 
@@ -618,37 +672,6 @@ export default function WelcomeScreen({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const paths = recentRepos.map((r) => r.path);
-
-    // Process sequentially to avoid flooding the Tauri IPC channel.
-    // Parallel Promise.allSettled for 20+ repos saturates the channel and
-    // delays any loadRepo calls until all of them complete.
-    (async () => {
-      const dirty = new Set<string>();
-      const behind = new Set<string>();
-      for (const p of paths) {
-        if (cancelled) return;
-        const [statusResult, behindResult] = await Promise.allSettled([
-          getStatus(p),
-          getHeadBehind(p),
-        ]);
-        if (cancelled) return;
-        if (statusResult.status === "fulfilled" && statusResult.value.length > 0) dirty.add(p);
-        if (behindResult.status === "fulfilled" && behindResult.value > 0) behind.add(p);
-        // Yield to the event loop between repos so clicks aren't blocked
-        await new Promise<void>((r) => setTimeout(r, 0));
-      }
-      if (!cancelled) {
-        setDirtyPaths(dirty);
-        setBehindPaths(behind);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [recentRepos]);
 
   const selectionActive = selectedPaths.size > 0;
 
@@ -695,8 +718,8 @@ export default function WelcomeScreen({
         categories={categories}
         selected={selectedPaths.has(repo.path)}
         selectionActive={selectionActive}
-        hasDirty={dirtyPaths.has(repo.path)}
-        hasBehind={behindPaths.has(repo.path)}
+        hasDirty={displayDirtyPaths.has(repo.path)}
+        hasBehind={displayBehindPaths.has(repo.path)}
         onOpen={() => onSelectRecent(repo.path)}
         onPin={() => onPinToggle(repo.path)}
         onRemove={() => onRemove(repo.path)}
@@ -769,6 +792,14 @@ export default function WelcomeScreen({
             </>
           ) : (
             <>
+              <button
+                className="icon-btn"
+                title="Refresh change indicators"
+                disabled={scanningStatus || recentRepos.length === 0}
+                onClick={() => void refreshRepoStatus()}
+              >
+                <RefreshCw size={14} className={scanningStatus ? "spin" : undefined} />
+              </button>
               <button className="btn-secondary" onClick={() => setShowCategoryForm(true)}>
                 <Plus size={13} />
                 New Category

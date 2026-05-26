@@ -36,6 +36,10 @@ export async function getStatus(repoPath: string): Promise<FileStatus[]> {
   return invoke("get_status", { repoPath });
 }
 
+export async function isRepoDirty(repoPath: string): Promise<boolean> {
+  return invoke("is_repo_dirty", { repoPath });
+}
+
 export async function getDiff(repoPath: string, commitOid?: string, staged?: boolean): Promise<FileDiff[]> {
   return invoke("get_diff", { repoPath, commitOid, staged });
 }

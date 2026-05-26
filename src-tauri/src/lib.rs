@@ -16,6 +16,7 @@ pub fn run() {
             get_all_commits,
             get_branches,
             get_status,
+            is_repo_dirty,
             get_diff,
             stage_file,
             unstage_file,

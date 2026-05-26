@@ -153,6 +153,7 @@ export default function App() {
       lastOpened: Date.now(),
       pinned: existing?.pinned ?? false,
       categoryId: existing?.categoryId ?? null,
+      hasLocalChanges: existing?.hasLocalChanges,
     };
     saveRecentRepos([entry, ...recentRepos.filter((r) => r.path !== path)].slice(0, 50));
 
@@ -166,6 +167,11 @@ export default function App() {
       if (loadId !== loadIdRef.current) return;
       setRepoSummary(summary);
       setStatus(fileStatus);
+      const hasLocalChanges = fileStatus.length > 0;
+      saveRecentRepos([
+        { ...entry, hasLocalChanges },
+        ...recentRepos.filter((r) => r.path !== path),
+      ].slice(0, 50));
       setBranches(allBranches);
       setTags(allTags);
 
