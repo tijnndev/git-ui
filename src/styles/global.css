@@ -2181,9 +2181,16 @@ body {
   position: relative;
 }
 
+.launchpad-search-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
 .launchpad-search-icon {
   position: absolute;
-  left: 44px;
+  left: 10px;
   color: var(--text-muted);
   pointer-events: none;
 }
@@ -2191,13 +2198,13 @@ body {
 .launchpad-search-input {
   width: 100%;
   padding: 7px 28px 7px 28px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  background: var(--bg-2);
+  border: 1px solid var(--border-light);
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 13px;
   outline: none;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .launchpad-search-input::placeholder {
@@ -2205,12 +2212,14 @@ body {
 }
 
 .launchpad-search-input:focus {
+  background: var(--bg-1);
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 .launchpad-search-clear {
   position: absolute;
-  right: 40px;
+  right: 8px;
   background: none;
   border: none;
   color: var(--text-muted);
@@ -2218,9 +2227,46 @@ body {
   padding: 2px;
   display: flex;
   align-items: center;
+  transition: color 0.1s;
 }
 
 .launchpad-search-clear:hover {
+  color: var(--text-primary);
+}
+
+.launchpad-filter-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 7px 30px 7px 12px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606060' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")
+    no-repeat right 10px center,
+    var(--bg-2);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-ui);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.launchpad-filter-select:hover {
+  background-color: var(--bg-1);
+  border-color: var(--text-muted);
+}
+
+.launchpad-filter-select:focus {
+  background-color: var(--bg-1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.launchpad-filter-select option {
+  background: var(--bg-1);
   color: var(--text-primary);
 }
 
@@ -2230,7 +2276,7 @@ body {
   gap: 8px;
   padding: 8px 32px;
   margin-top: 10px;
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -2744,7 +2790,7 @@ body {
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -2891,7 +2937,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted);
-  background: var(--bg-secondary);
+  background: var(--bg-2);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;

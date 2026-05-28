@@ -594,6 +594,7 @@ export default function WelcomeScreen({
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "dirty" | "clean">("all");
   const cachedDirtyPaths = useMemo(
     () => new Set(recentRepos.filter((r) => r.hasLocalChanges).map((r) => r.path)),
     [recentRepos]
@@ -691,9 +692,14 @@ export default function WelcomeScreen({
   };
 
   const query = search.trim();
-  const filteredRepos = query
-    ? recentRepos.filter((r) => matchesSearch(r.name, query) || matchesSearch(r.path, query))
-    : recentRepos;
+  const filteredRepos = (() => {
+    let repos = query
+      ? recentRepos.filter((r) => matchesSearch(r.name, query) || matchesSearch(r.path, query))
+      : recentRepos;
+    if (filterMode === "dirty") repos = repos.filter((r) => displayDirtyPaths.has(r.path));
+    if (filterMode === "clean") repos = repos.filter((r) => !displayDirtyPaths.has(r.path));
+    return repos;
+  })();
 
   const categoryRepos = new Map<string, RecentRepo[]>();
   const uncategorized: RecentRepo[] = [];
@@ -823,20 +829,31 @@ export default function WelcomeScreen({
 
       {/* Search bar */}
       <div className="launchpad-search">
-        <Search size={13} className="launchpad-search-icon" />
-        <input
-          ref={searchInputRef}
-          className="launchpad-search-input"
-          type="text"
-          placeholder="Search repositories…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {search && (
-          <button className="launchpad-search-clear" onClick={() => setSearch("")}>
-            <X size={12} />
-          </button>
-        )}
+        <div className="launchpad-search-input-wrap">
+          <Search size={13} className="launchpad-search-icon" />
+          <input
+            ref={searchInputRef}
+            className="launchpad-search-input"
+            type="text"
+            placeholder="Search repositories…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {search && (
+            <button className="launchpad-search-clear" onClick={() => setSearch("")}>
+              <X size={12} />
+            </button>
+          )}
+        </div>
+        <select
+          className="launchpad-filter-select"
+          value={filterMode}
+          onChange={(e) => setFilterMode(e.target.value as "all" | "dirty" | "clean")}
+        >
+          <option value="all">All repos</option>
+          <option value="dirty">With changes</option>
+          <option value="clean">Without changes</option>
+        </select>
       </div>
 
       <div className="launchpad-body">
