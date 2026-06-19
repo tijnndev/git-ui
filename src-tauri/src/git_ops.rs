@@ -224,7 +224,11 @@ pub fn get_diff(repo_path: &str, commit_oid: Option<String>, staged: bool) -> Re
         repo.diff_tree_to_index(head_tree.as_ref(), None, None)
             .map_err(|e| e.message().to_string())?
     } else {
-        repo.diff_index_to_workdir(None, None)
+        let mut opts = git2::DiffOptions::new();
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .show_untracked_content(true);
+        repo.diff_index_to_workdir(None, Some(&mut opts))
             .map_err(|e| e.message().to_string())?
     };
 
@@ -271,11 +275,17 @@ pub fn get_diff(repo_path: &str, commit_oid: Option<String>, staged: bool) -> Re
 }
 
 pub fn stage_file(repo_path: &str, file_path: &str) -> Result<(), String> {
-    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
-    let mut index = repo.index().map_err(|e| e.message().to_string())?;
-    index.add_path(Path::new(file_path)).map_err(|e| e.message().to_string())?;
-    index.write().map_err(|e| e.message().to_string())?;
-    Ok(())
+    // `git add` handles new, modified, and deleted paths correctly; index.add_path alone fails on deletions.
+    let out = git_cmd()
+        .args(["add", "--", file_path])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run git: {}", e))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+    Err(if err.is_empty() { "stage failed".to_string() } else { err })
 }
 
 pub fn unstage_file(repo_path: &str, file_path: &str) -> Result<(), String> {
@@ -485,6 +495,19 @@ pub fn clone_repo(url: &str, dest: &str) -> Result<(), String> {
 }
 
 pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
+    if is_path_untracked(repo_path, file_path)? {
+        let full_path = Path::new(repo_path).join(file_path);
+        if !full_path.exists() {
+            return Ok(());
+        }
+        if full_path.is_dir() {
+            std::fs::remove_dir_all(&full_path).map_err(|e| e.to_string())?;
+        } else {
+            std::fs::remove_file(&full_path).map_err(|e| e.to_string())?;
+        }
+        return Ok(());
+    }
+
     // `git restore` (git ≥ 2.23) discards working-tree changes cleanly.
     // Fall back to `git checkout HEAD -- <file>` for older versions.
     let out = git_cmd()
@@ -501,6 +524,19 @@ pub fn discard_file(repo_path: &str, file_path: &str) -> Result<(), String> {
     if out2.status.success() { return Ok(()); }
     let err = String::from_utf8_lossy(&out2.stderr).trim().to_string();
     Err(if err.is_empty() { "discard failed".to_string() } else { err })
+}
+
+fn is_path_untracked(repo_path: &str, file_path: &str) -> Result<bool, String> {
+    let repo = Repository::open(repo_path).map_err(|e| e.message().to_string())?;
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true).pathspec(file_path);
+    let statuses = repo.statuses(Some(&mut opts)).map_err(|e| e.message().to_string())?;
+    for entry in statuses.iter() {
+        if entry.path() == Some(file_path) && entry.status().contains(git2::Status::WT_NEW) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub fn merge_branch(repo_path: &str, branch_name: &str) -> Result<String, String> {

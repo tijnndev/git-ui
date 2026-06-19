@@ -21,7 +21,7 @@ export default function DiffViewer({ diff }: Props) {
                 <div key={li} className={`diff-line ${cls}`}>
                   <span className="diff-lineno old">{line.old_lineno ?? ""}</span>
                   <span className="diff-lineno new">{line.new_lineno ?? ""}</span>
-                  <span className="diff-origin">{line.origin === "+" ? "+" : line.origin === "-" ? "-" : " "}</span>
+                  <span className="diff-origin" aria-hidden="true" />
                   <span className="diff-content">{line.content}</span>
                 </div>
               );

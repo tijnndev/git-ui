@@ -1447,8 +1447,8 @@ body {
 }
 
 .status-untracked {
-  background: #9fa6c022;
-  color: var(--text-muted);
+  background: #10b98122;
+  color: var(--green);
 }
 
 .status-conflicted {
@@ -1521,6 +1521,7 @@ body {
   text-align: center;
   flex-shrink: 0;
   font-weight: 700;
+  user-select: none;
 }
 
 .diff-content {
@@ -1534,7 +1535,8 @@ body {
   background: rgba(16, 185, 129, 0.1);
 }
 
-.diff-add .diff-origin {
+.diff-add .diff-origin::before {
+  content: "+";
   color: var(--green);
 }
 
@@ -1542,8 +1544,13 @@ body {
   background: rgba(239, 68, 68, 0.1);
 }
 
-.diff-del .diff-origin {
+.diff-del .diff-origin::before {
+  content: "-";
   color: var(--red);
+}
+
+.diff-ctx .diff-origin::before {
+  content: " ";
 }
 
 .diff-ctx {

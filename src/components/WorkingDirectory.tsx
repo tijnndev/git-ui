@@ -27,7 +27,7 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
   const [amend, setAmend] = useState(false);
   const [stashMsg, setStashMsg] = useState("");
   const [pushing, setPushing] = useState(false);
-  const [confirmDiscard, setConfirmDiscard] = useState<{ filePath: string } | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState<{ filePath: string; untracked: boolean } | null>(null);
   const [confirmDiscardAll, setConfirmDiscardAll] = useState(false);
   const toast = useToast();
 
@@ -95,8 +95,8 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
     }
   };
 
-  const handleDiscard = (filePath: string) => {
-    setConfirmDiscard({ filePath });
+  const handleDiscard = (filePath: string, untracked: boolean) => {
+    setConfirmDiscard({ filePath, untracked });
   };
 
   const doDiscard = async (filePath: string) => {
@@ -227,13 +227,17 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
               className={`file-item ${selectedFile === f.path && !selectedStaged ? "selected" : ""}`}
               onClick={() => onSelectFile?.(f.path, false)}
             >
-              <span className={`status-badge status-${f.status}`}>{f.status[0].toUpperCase()}</span>
+              <span className={`status-badge status-${f.status === "untracked" ? "added" : f.status}`}>
+                {f.status === "untracked" ? "A" : f.status[0].toUpperCase()}
+              </span>
               <span className="file-path">{f.path}</span>
-              {f.status !== "untracked" && (
-                <button className="icon-btn danger" title="Discard changes" onClick={(e) => { e.stopPropagation(); handleDiscard(f.path); }}>
-                  <Trash2 size={10} />
-                </button>
-              )}
+              <button
+                className="icon-btn danger"
+                title={f.status === "untracked" ? "Delete file" : "Discard changes"}
+                onClick={(e) => { e.stopPropagation(); handleDiscard(f.path, f.status === "untracked"); }}
+              >
+                <Trash2 size={10} />
+              </button>
               <button className="icon-btn" onClick={(e) => { e.stopPropagation(); handleStage(f.path); }}>
                 <Plus size={10} />
               </button>
@@ -299,9 +303,13 @@ export default function WorkingDirectory({ repoPath, status, onRefresh, category
 
     {confirmDiscard && (
       <ConfirmModal
-        title="Discard Changes"
-        message={`Discard changes to "${confirmDiscard.filePath}"? This cannot be undone.`}
-        confirmLabel="Discard"
+        title={confirmDiscard.untracked ? "Delete File" : "Discard Changes"}
+        message={
+          confirmDiscard.untracked
+            ? `Delete untracked file "${confirmDiscard.filePath}"? This cannot be undone.`
+            : `Discard changes to "${confirmDiscard.filePath}"? This cannot be undone.`
+        }
+        confirmLabel={confirmDiscard.untracked ? "Delete" : "Discard"}
         danger
         onConfirm={() => { doDiscard(confirmDiscard.filePath); setConfirmDiscard(null); }}
         onCancel={() => setConfirmDiscard(null)}

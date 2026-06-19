@@ -75,6 +75,16 @@ function CloneDialog({ onClose, onCloned, existingRepoNames, categories }: Clone
     });
   }, []);
 
+  // Auto-select category when the chosen account matches a category's authentication
+  useEffect(() => {
+    if (!accountId) {
+      setCategoryId(null);
+      return;
+    }
+    const match = categories.find((c) => c.accountId === accountId);
+    setCategoryId(match?.id ?? null);
+  }, [accountId, categories]);
+
   // Fetch all repos (personal + orgs) whenever account changes
   useEffect(() => {
     if (!selectedAccount?.token) { setReposByOwner(new Map()); return; }
